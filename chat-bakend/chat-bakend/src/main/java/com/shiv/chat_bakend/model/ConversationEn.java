@@ -70,4 +70,7 @@ public class ConversationEn {
     // optional
     private boolean active=true;
 
+//    This is used when message is sent on the entity
+    private LocalDateTime lastMessageAt;
+
 }

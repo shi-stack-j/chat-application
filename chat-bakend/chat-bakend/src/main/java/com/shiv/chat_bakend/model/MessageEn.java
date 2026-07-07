@@ -1,7 +1,10 @@
 package com.shiv.chat_bakend.model;
 
-import com.shiv.chat_bakend.enums.MessageStatusEnum;
 import jakarta.persistence.*;
+import lombok.AllArgsConstructor;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
 import org.hibernate.annotations.CreationTimestamp;
 
 import java.time.LocalDateTime;
@@ -22,6 +25,10 @@ import java.time.LocalDateTime;
                 )
         }
 )
+@Getter
+@Setter
+@AllArgsConstructor
+@NoArgsConstructor
 public class MessageEn{
 
 
@@ -68,20 +75,11 @@ public class MessageEn{
 
 
 
-    @Enumerated(EnumType.STRING)
-    private MessageStatusEnum status;
-
-
-
     @CreationTimestamp
     private LocalDateTime sentAt;
 
+    @CreationTimestamp
+    private LocalDateTime createdAt;
 
-
-    private LocalDateTime deliveredAt;
-
-
-
-    private LocalDateTime readAt;
 
 }

@@ -1,18 +1,24 @@
+import { Client } from '@stomp/stompjs';
+import SockJS from 'sockjs-client';
 
-
-import { Client } from "@stomp/stompjs"
-import SockJS from "sockjs-client";
+/**
+ * CHAT SERVICE
+ * 
+ * Centralized client managing the WebSocket STOMP protocol lifecycle.
+ * Features auto-reconnect (reconnectDelay: 5000) and prevents duplicate subscriptions.
+ */
 class ChatService {
   client = null;
+  activeSubscriptions = {};
 
   connect(token, onConnect, onDisconnect) {
     if (this.client && (this.client.active || this.client.connected)) {
-      console.log("STOMP client already active or connected.");
+      console.log('STOMP client already active or connected.');
       return;
     }
 
     this.client = new Client({
-      webSocketFactory: () => new SockJS("http://localhost:8080/ws"),
+      webSocketFactory: () => new SockJS(import.meta.env.VITE_WS_URL || 'http://localhost:8080/chat-app/v1/ws'),
       reconnectDelay: 5000,
 
       connectHeaders: {
@@ -20,56 +26,67 @@ class ChatService {
       },
 
       onConnect: () => {
-        console.log("Connected Successfully");
+        console.log('Connected Successfully');
         if (onConnect) {
           onConnect();
-          localStorage.removeItem("token");
         }
       },
 
       onDisconnect: () => {
-        console.log("Disconnected");
+        console.log('Disconnected');
         if (onDisconnect) onDisconnect();
       },
 
       onStompError: (frame) => {
-        console.error("STOMP Error:", frame.body);
-      },
+        console.error('STOMP Error:', frame.body);
+      }
     });
 
     this.client.activate();
   }
 
   sendMessage(message) {
-    console.log("Sending message.......");
-    console.log("Message is :- ", message);
+    console.log('Sending message.......');
+    console.log('Message is :- ', message);
     if (!this.client || !this.client.connected) {
-      throw new Error("STOMP client is not connected.");
+      throw new Error('STOMP client is not connected.');
     }
 
-    // Map frontend message model to backend ChatMessage DTO
+    // Map frontend message model to backend MessageReqDto
     const chatMessage = {
-      messageId: message.id,
+      receiver: message.receiverId, // maps to backend expected receiver (min=3 size validation)
       content: message.content,
-      receiverId: message.receiverId,
       sendAt: message.timestamp // Maps ISO 8601 timestamp string
     };
-    console.log("Chat message is :- ", chatMessage);
-    console.log("Destination is :- ", "/app/chat");
+
+    console.log('Chat message payload is :- ', chatMessage);
     this.client.publish({
-      destination: "/app/chat",
+      destination: '/app/chat',
       body: JSON.stringify(chatMessage)
     });
-    console.log("Message sended........");
+    console.log('Message published.');
   }
 
   subscribeToMessages(destination, onMessageReceived) {
-    console.log("Subscribining........");
-    console.log("Destination is........ ", destination);
+    console.log('Subscribing........');
+    console.log('Destination is........ ', destination);
     if (!this.client || !this.client.connected) {
-      throw new Error("STOMP client is not connected to subscribe.");
+      throw new Error('STOMP client is not connected to subscribe.');
     }
-    return this.client.subscribe(destination, onMessageReceived);
+
+    // Unsubscribe from any previous subscription on this destination to prevent duplicate listeners
+    if (this.activeSubscriptions[destination]) {
+      console.log('Cleaning up duplicate subscription for:', destination);
+      try {
+        this.activeSubscriptions[destination].unsubscribe();
+      } catch (err) {
+        console.error('Failed to unsubscribe previous subscription:', err);
+      }
+    }
+
+    const subscription = this.client.subscribe(destination, onMessageReceived);
+    this.activeSubscriptions[destination] = subscription;
+    return subscription;
   }
 
   disconnect() {
@@ -77,22 +94,9 @@ class ChatService {
       this.client.deactivate();
       this.client = null;
     }
+    this.activeSubscriptions = {};
   }
 }
+
 const chatService = new ChatService();
 export default chatService;
-
-// This is the structure of the message that is being sended by the backend 
-// public class ChatMsgResDto {
-//     private String senderId;
-//     private String content;
-// }
-
-// This is the structure if the message that is being recieved by the bakcend when someone sends the message
-// public class ChatMessage {
-//     private String messageId;
-//     private String content;
-//     private String receiverId;
-//     private LocalDateTime sendAt;
-// }
-

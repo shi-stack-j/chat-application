@@ -1,13 +1,11 @@
-// Reusable Search Bar Component
+import React, { memo } from 'react';
 
 /**
  * REUSABLE SEARCH BAR COMPONENT
  * 
- * Why this component exists:
- * - Provides a text input to filter the conversations list or find a specific User ID.
- * - Centralizes styles for input fields, including border changes, focus highlights, and inner icons.
+ * Provides search filtering. Wrapped in React.memo.
  */
-export const SearchBar = ({ 
+export const SearchBar = memo(({ 
   value = '', 
   onChange, 
   placeholder = 'Search or start new chat...', 
@@ -67,6 +65,6 @@ export const SearchBar = ({
       )}
     </div>
   );
-};
+});
 
 export default SearchBar;

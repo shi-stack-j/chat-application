@@ -15,5 +15,9 @@ public interface UserRep extends JpaRepository<UserEn,Long> {
     Optional<UserEn> findByUserIdAndIsActiveTrue(String userId);
 //    To check that weather the user exists by the userId
     boolean existsByUserId(String userId);
+//    To fetch the user only if deleted status is false and also active status is true
+    Optional<UserEn> findByUserIdAndIsActiveTrueAndDeletedFalse(String userId);
+//    This method is used to check that weather the userExistsById and only fetch the active users
+    boolean existsByUserIdAndDeletedFalseAndIsActiveTrue(String userId);
 
 }

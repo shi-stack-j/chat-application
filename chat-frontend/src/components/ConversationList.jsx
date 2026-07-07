@@ -1,103 +1,83 @@
 import { useSelector, useDispatch } from 'react-redux';
-import { selectSearchQuery, selectUnreadCounts, selectOnlineUsers, setSelectedChat, setSearchQuery, addOnlineUser } from '../features/chat/chatSelectionSlice';
+import { selectSearchQuery, selectOnlineUsers, setSelectedChat, setSearchQuery } from '../features/chat/chatSlice';
 import useChat from '../hooks/useChat';
 import ConversationItem from './ConversationItem';
+import { SidebarSkeleton } from './SkeletonLoader';
 import toastHelper from '../utils/toastHelper';
 import { setSidebarOpen, setGlobalLoading } from '../features/ui/uiSlice';
-import { selectCurrentUserId } from '../features/user/userSlice';
-import userService from '../services/userService';
+import { selectCurrentUserId } from '../features/auth/authSlice';
 
 /**
  * CONVERSATION LIST COMPONENT
  * 
- * Why this component exists:
- * - Aggregates and filters active conversations in the sidebar directory.
- * - Sorts conversations chronologically, placing the most active threads at the top.
- * 
- * Design details:
- * - Dynamic filtering: List updates live as the user types in the search query.
- * - "Quick-Add" Action: If the typed search string does not match any current conversation,
- *   it shows a helper item allowing the user to instantiate a new chat partner directly.
+ * Renders list of conversation summaries from ChatContext.
+ * Offers quick search-add functionality to start new chats.
  */
 export const ConversationList = () => {
   const dispatch = useDispatch();
-  const { conversations, createConversation } = useChat();
+  const { conversationList, startConversation, loadingConversations } = useChat();
   const searchQuery = useSelector(selectSearchQuery);
-  const unreadCounts = useSelector(selectUnreadCounts);
   const onlineUsers = useSelector(selectOnlineUsers);
   const currentUserId = useSelector(selectCurrentUserId);
 
-  // 1. Gather all conversation keys (other users)
-  const chatUserIds = Object.keys(conversations);
-
-  // 2. Sort the conversations based on the timestamp of their last message
-  const sortedChatUserIds = [...chatUserIds].sort((a, b) => {
-    const listA = conversations[a] || [];
-    const listB = conversations[b] || [];
-    if (listA.length === 0 && listB.length === 0) return 0;
-    if (listA.length === 0) return 1; // Put empty chats at bottom
-    if (listB.length === 0) return -1;
-    
-    const timeA = new Date(listA[listA.length - 1].timestamp).getTime();
-    const timeB = new Date(listB[listB.length - 1].timestamp).getTime();
-    return timeB - timeA; // Descending
+  // 1. Filter list based on search query matching receiver's userId or nickname
+  const filteredConversations = conversationList.filter((c) => {
+    const userIdMatch = c.receiver.userId.toLowerCase().includes(searchQuery.trim().toLowerCase());
+    const nickNameMatch = c.receiver.nickName && c.receiver.nickName.toLowerCase().includes(searchQuery.trim().toLowerCase());
+    return userIdMatch || nickNameMatch;
   });
 
-  // 3. Filter list based on search query
-  const filteredChatUserIds = sortedChatUserIds.filter((userId) =>
-    userId.toLowerCase().includes(searchQuery.trim().toLowerCase())
+  // 2. Check if search query matches an existing conversation exactly
+  const exactMatchExists = conversationList.some(
+    (c) => c.receiver.userId.toLowerCase() === searchQuery.trim().toLowerCase()
   );
 
-  // 4. Check if the searched User ID exists in active chats
-  const exactMatchExists = chatUserIds.some(
-    (id) => id.toLowerCase() === searchQuery.trim().toLowerCase()
-  );
-
-  // Check if search query is valid to start a new chat
   const canStartNewChat = searchQuery.trim().length > 0 && !exactMatchExists;
 
   const handleStartNewChat = async () => {
     const targetUserId = searchQuery.trim();
     if (!targetUserId) return;
 
+    if (targetUserId.toLowerCase() === currentUserId.toLowerCase()) {
+      toastHelper.error("You cannot start a conversation with yourself.");
+      return;
+    }
+
     dispatch(setGlobalLoading(true));
 
     try {
-      // 1. Call backend-ready service to verify user exist & online status
-      const connectResponse = await userService.connectUser(targetUserId, currentUserId);
-      const connectedUser = connectResponse.user;
+      // Create/Fetch conversation summary from backend
+      const summary = await startConversation(targetUserId, currentUserId);
+      
+      if (summary) {
+        // Open chat window
+        dispatch(setSelectedChat(summary.receiver.userId));
+        // Reset search bar
+        dispatch(setSearchQuery(''));
+        // Close sidebar drawer on mobile
+        dispatch(setSidebarOpen(false));
 
-      // 2. Add user to Chat Context conversations list
-      createConversation(connectedUser.userId);
-
-      // 3. Mark user online in Redux state
-      dispatch(addOnlineUser(connectedUser.userId));
-
-      // 4. Open the chat window with the new user
-      dispatch(setSelectedChat(connectedUser.userId));
-
-      // 5. Reset sidebar search input
-      dispatch(setSearchQuery(''));
-
-      // 6. Close mobile responsive side drawer
-      dispatch(setSidebarOpen(false));
-
-      toastHelper.success(`Connected with ${connectedUser.userId}`);
+        toastHelper.success(`Connected with ${summary.receiver.nickName || summary.receiver.userId}`);
+      }
     } catch (error) {
-      // Show failure toast notifications
-      toastHelper.error(error.message || 'Failed to establish connection.');
+      toastHelper.error(error.message || 'Failed to establish connection. User may not exist.');
     } finally {
       dispatch(setGlobalLoading(false));
     }
   };
 
+  if (loadingConversations && conversationList.length === 0) {
+    return (
+      <div className="flex-1 overflow-y-auto select-none">
+        <SidebarSkeleton />
+      </div>
+    );
+  }
+
   return (
     <div className="flex-1 overflow-y-auto select-none">
       
-      {/* 
-        Quick Add new chat suggestion 
-        Shows up if search text matches no active conversations.
-      */}
+      {/* Quick Add block if no exact match exists in current list */}
       {canStartNewChat && (
         <div className="p-3 bg-indigo-50/50 dark:bg-indigo-950/20 border-b border-indigo-100 dark:border-indigo-900/30">
           <button
@@ -116,10 +96,8 @@ export const ConversationList = () => {
         </div>
       )}
 
-      {/* 
-        List items rendering
-      */}
-      {filteredChatUserIds.length === 0 ? (
+      {/* Render list items */}
+      {filteredConversations.length === 0 ? (
         <div className="flex flex-col items-center justify-center p-8 text-center text-slate-400 dark:text-slate-500">
           {!canStartNewChat && (
             <>
@@ -127,23 +105,25 @@ export const ConversationList = () => {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M17 8h2a2 2 0 012 2v6a2 2 0 01-2 2h-2v4l-4-4H9a1.994 1.994 0 01-1.414-.586m0 0L11 14h4a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2v4l.586-.586z" />
               </svg>
               <p className="text-xs">No active conversations yet.</p>
-              <p className="text-[10px] mt-1">Type a User ID in the search bar above to start a session.</p>
+              <p className="text-[10px] mt-1">Type a User ID in the search bar above to start.</p>
             </>
           )}
         </div>
       ) : (
-        filteredChatUserIds.map((userId) => {
-          const messages = conversations[userId] || [];
-          const lastMessage = messages.length > 0 ? messages[messages.length - 1] : null;
-          const unreadCount = unreadCounts[userId] || 0;
-          const isOnline = onlineUsers.includes(userId);
+        filteredConversations.map((c) => {
+          const lastMessagePayload = c.lastMessage 
+            ? { content: c.lastMessage, timestamp: c.lastMessageTime } 
+            : null;
+          const isOnline = onlineUsers.some(id => id.toLowerCase() === c.receiver.userId.toLowerCase()) || c.receiver.isOnline || c.receiver.online;
 
           return (
             <ConversationItem
-              key={userId}
-              chatUserId={userId}
-              lastMessage={lastMessage}
-              unreadCount={unreadCount}
+              key={c.receiver.userId}
+              chatUserId={c.receiver.userId}
+              nickName={c.receiver.nickName}
+              avatarUrl={c.receiver.avatarUrl}
+              lastMessage={lastMessagePayload}
+              unreadCount={c.unreadCount}
               isOnline={isOnline}
             />
           );

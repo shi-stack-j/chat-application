@@ -1,6 +1,6 @@
 import { useSelector, useDispatch } from 'react-redux';
-import { selectOnlineUsers, setSelectedChat } from '../features/chat/chatSelectionSlice';
-import { selectCurrentUserId } from '../features/user/userSlice';
+import { selectOnlineUsers, setSelectedChat } from '../features/chat/chatSlice';
+import { selectCurrentUserId } from '../features/auth/authSlice';
 import { setSidebarOpen } from '../features/ui/uiSlice';
 import UserAvatar from './UserAvatar';
 import useChat from '../hooks/useChat';
@@ -21,23 +21,24 @@ export const OnlineUsersList = () => {
   const dispatch = useDispatch();
   const currentUserId = useSelector(selectCurrentUserId);
   const onlineUsers = useSelector(selectOnlineUsers);
-  const { createConversation } = useChat();
+  const { startConversation } = useChat();
 
   // Filter out the current user's ID from the list of online users
   const activePeers = onlineUsers.filter((userId) => userId !== currentUserId);
 
   const handleStartChat = (userId) => {
-    // 1. Ensure the conversation object exists in Context state
-    createConversation(userId);
+    // 1. Ensure the conversation object exists in Context/Redux state
+    startConversation(userId, currentUserId);
     // 2. Select the conversation in Redux
     dispatch(setSelectedChat(userId));
+    console.log("Setting the selected chat to ", userId);
     // 3. Close mobile drawer
     dispatch(setSidebarOpen(false));
   };
 
   return (
     <div className="py-3 px-4 bg-slate-50/50 dark:bg-slate-900/40 border-b border-slate-100 dark:border-slate-800/50 shrink-0">
-      
+
       {/* Small title header */}
       <div className="flex items-center justify-between mb-2 select-none">
         <span className="text-[10px] font-bold tracking-wider text-slate-400 dark:text-slate-500 uppercase">
@@ -71,7 +72,7 @@ export const OnlineUsersList = () => {
                 <UserAvatar userId={userId} size="sm" showStatus={false} />
                 <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-emerald-500 rounded-full border-2 border-white dark:border-slate-900"></span>
               </div>
-              
+
               {/* Short truncated username */}
               <span className="text-[10px] font-medium text-slate-500 dark:text-slate-400 max-w-[50px] truncate group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
                 {userId}

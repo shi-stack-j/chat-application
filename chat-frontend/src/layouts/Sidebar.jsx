@@ -1,6 +1,6 @@
 import { useSelector, useDispatch } from 'react-redux';
-import { selectCurrentUser, clearCurrentUser } from '../features/user/userSlice';
-import { selectSearchQuery, setSearchQuery, clearSelectedChat } from '../features/chat/chatSelectionSlice';
+import { selectCurrentUser, clearCurrentUser } from '../features/auth/authSlice';
+import { selectSearchQuery, setSearchQuery, clearSelectedChat, resetChatState } from '../features/chat/chatSlice';
 import { toggleTheme, selectTheme } from '../features/ui/uiSlice';
 import UserAvatar from '../components/UserAvatar';
 import SearchBar from '../components/SearchBar';
@@ -31,6 +31,7 @@ export const Sidebar = () => {
       dispatch(clearCurrentUser());
       dispatch(clearSelectedChat());
       dispatch(setSearchQuery(''));
+      dispatch(resetChatState());
     }
   };
 
@@ -49,7 +50,7 @@ export const Sidebar = () => {
         
         {/* User Profile */}
         <div className="flex items-center gap-3 min-w-0">
-          <UserAvatar userId={currentUser.currentUserId} size="sm" showStatus={true} isOnline={true} />
+          <UserAvatar userId={currentUser.currentUserId} imageUrl={currentUser.avatarUrl} size="sm" showStatus={true} isOnline={true} />
           <div className="flex flex-col min-w-0">
             <span className="text-xs text-slate-400 dark:text-slate-500 font-medium">Logged in as</span>
             <span className="text-sm font-semibold text-slate-800 dark:text-slate-100 truncate" title={currentUser.currentUserId}>

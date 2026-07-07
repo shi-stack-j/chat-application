@@ -1,22 +1,19 @@
+import React, { memo } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
-import { setSelectedChat, selectSelectedChatUserId } from '../features/chat/chatSelectionSlice';
+import { setSelectedChat, selectSelectedChatUserId } from '../features/chat/chatSlice';
 import { setSidebarOpen } from '../features/ui/uiSlice';
 import UserAvatar from './UserAvatar';
 
 /**
  * REUSABLE CONVERSATION ITEM COMPONENT
  * 
- * Why this component exists:
- * - Renders a single conversation slot in the sidebar directory list.
- * - Shows summarized chat telemetry: last message text, last message time, and unread counter badges.
- * 
- * Design Details:
- * - Uses responsive mouse overlays (`hover:bg-slate-100`, dark variants) and smooth transitions.
- * - Highlights the row with a premium background block when selected.
- * - Truncates the last message text to keep the layout clean.
+ * Renders a single conversation slot in the sidebar list.
+ * Wrapped in React.memo with a custom comparator to prevent duplicate sidebar list rendering.
  */
-export const ConversationItem = ({ 
+export const ConversationItem = memo(({ 
   chatUserId, 
+  nickName,
+  avatarUrl,
   lastMessage, 
   unreadCount = 0, 
   isOnline = false 
@@ -27,20 +24,17 @@ export const ConversationItem = ({
   const isSelected = selectedChatUserId === chatUserId;
 
   const handleSelect = () => {
-    // 1. Update active chat user in Redux
     dispatch(setSelectedChat(chatUserId));
-    // 2. On mobile, collapse the sidebar drawer to reveal the chat panel
-    dispatch(setSidebarOpen(false));
+    dispatch(setSidebarOpen(false)); // Close drawer layout on mobile
   };
 
-  // Helper to format the message time
+  // Helper to format the message timestamp in sidebar
   const formatTime = (timeInput) => {
     if (!timeInput) return '';
     try {
       const date = new Date(timeInput);
       const today = new Date();
       
-      // If it is today, show only time. If not, show date.
       if (date.toDateString() === today.toDateString()) {
         return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
       }
@@ -64,9 +58,10 @@ export const ConversationItem = ({
         }
       `}
     >
-      {/* Avatar with status indicator */}
+      {/* Avatar with custom image fallback */}
       <UserAvatar 
         userId={chatUserId} 
+        imageUrl={avatarUrl}
         size="md" 
         showStatus={true} 
         isOnline={isOnline} 
@@ -78,7 +73,7 @@ export const ConversationItem = ({
         {/* Name and Time */}
         <div className="flex items-center justify-between">
           <span className={`text-sm truncate ${isSelected ? 'font-semibold text-indigo-600 dark:text-indigo-400' : 'font-medium text-slate-800 dark:text-slate-100'}`}>
-            {chatUserId}
+            {nickName || chatUserId}
           </span>
           <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium shrink-0">
             {lastMessage ? formatTime(lastMessage.timestamp) : ''}
@@ -108,6 +103,14 @@ export const ConversationItem = ({
       </div>
     </button>
   );
-};
+}, (prevProps, nextProps) => {
+  return prevProps.chatUserId === nextProps.chatUserId &&
+         prevProps.nickName === nextProps.nickName &&
+         prevProps.avatarUrl === nextProps.avatarUrl &&
+         prevProps.unreadCount === nextProps.unreadCount &&
+         prevProps.isOnline === nextProps.isOnline &&
+         prevProps.lastMessage?.content === nextProps.lastMessage?.content &&
+         prevProps.lastMessage?.timestamp === nextProps.lastMessage?.timestamp;
+});
 
 export default ConversationItem;

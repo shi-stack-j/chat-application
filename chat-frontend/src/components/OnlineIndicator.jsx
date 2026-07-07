@@ -1,20 +1,17 @@
-// Reusable Online Indicator Component
+import React, { memo } from 'react';
 
 /**
  * REUSABLE ONLINE INDICATOR DOT
  * 
- * Why this component exists:
- * - Provides a clean visual standard for indicating connection state (online vs offline).
- * - Avoids duplication of color classes and sizing math.
+ * Provides a clean visual indicator of online presence. Wrapped in React.memo.
  */
-
 const sizeClasses = {
   sm: 'w-2.5 h-2.5',
   md: 'w-3 h-3',
   lg: 'w-4 h-4',
 };
 
-export const OnlineIndicator = ({ 
+export const OnlineIndicator = memo(({ 
   isOnline = false, 
   size = 'sm', 
   className = '' 
@@ -29,15 +26,11 @@ export const OnlineIndicator = ({
       `}
       title={isOnline ? 'Online' : 'Offline'}
     >
-      {/* 
-        Add a subtle glowing pulse animation for online users 
-        to enhance the dynamic and premium appearance of the application.
-      */}
       {isOnline && (
         <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75"></span>
       )}
     </span>
   );
-};
+});
 
 export default OnlineIndicator;

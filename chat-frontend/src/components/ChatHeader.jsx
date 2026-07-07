@@ -1,5 +1,5 @@
 import { useSelector, useDispatch } from 'react-redux';
-import { selectOnlineUsers, clearSelectedChat } from '../features/chat/chatSelectionSlice';
+import { selectOnlineUsers, clearSelectedChat, selectConversations } from '../features/chat/chatSlice';
 import { setSidebarOpen } from '../features/ui/uiSlice';
 import UserAvatar from './UserAvatar';
 import useChat from '../hooks/useChat';
@@ -16,9 +16,15 @@ import toastHelper from '../utils/toastHelper';
 export const ChatHeader = ({ chatUserId }) => {
   const dispatch = useDispatch();
   const onlineUsers = useSelector(selectOnlineUsers);
+  const conversations = useSelector(selectConversations);
   const { clearConversation, removeConversation } = useChat();
 
-  const isOnline = onlineUsers.includes(chatUserId);
+  const activeSummary = conversations.find(
+    (c) => c.receiver.userId.toLowerCase() === chatUserId.toLowerCase()
+  );
+
+  const isOnline = onlineUsers.some(id => id.toLowerCase() === chatUserId.toLowerCase()) || 
+                   (activeSummary && (activeSummary.receiver.isOnline || activeSummary.receiver.online));
 
   const handleClearChat = () => {
     if (window.confirm(`Are you sure you want to clear all messages with ${chatUserId}?`)) {

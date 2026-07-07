@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { Routes, Route, Navigate } from 'react-router';
 import { useSelector } from 'react-redux';
-import { selectCurrentUserId } from '../features/user/userSlice';
+import { selectCurrentUserId } from '../features/auth/authSlice';
 
 // Import Pages
 import LandingPage from '../pages/LandingPage';

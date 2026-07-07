@@ -1,65 +1,78 @@
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/chat-app/v1';
 
+/**
+ * Handles HTTP response validation and parses body/errors.
+ */
+const handleResponse = async (response) => {
+  if (!response.ok) {
+    const errText = await response.text();
+    let errMsg = 'API Request failed.';
+    try {
+      const errJson = JSON.parse(errText);
+      errMsg = errJson.message || errJson.errorMessage || errMsg;
+    } catch {
+      errMsg = errText || errMsg;
+    }
+    throw new Error(errMsg);
+  }
+
+  const contentType = response.headers.get('content-type');
+  if (contentType && contentType.includes('application/json')) {
+    return await response.json();
+  }
+  return await response.text();
+};
 
 class UserService {
-  getAllUsers = async (userID) => {
+  /**
+   * Fetches user profile status by ID.
+   * GET /user/get/{userId}
+   * 
+   * @param {string} userId - User's business key
+   * @returns {Promise<Object>} UserResDto - { userId, nickName, avatarUrl, isOnline }
+   */
+  getUser = async (userId) => {
     try {
-      const response = await fetch(`http://localhost:8080/user/get/${userID}`, { method: "GET" });
-      if (response.ok) {
-        const data = await response.json();
-        console.log("Data is :- ", data);
-        return data;
-      }
-      else {
-        throw new Error(response.statusText);
-      }
-    }
-    catch (error) {
-      console.error(error);
+      const response = await fetch(`${API_BASE_URL}/user/get/${userId}`, { method: 'GET' });
+      return await handleResponse(response);
+    } catch (error) {
+      console.error(`Get User API Error for ${userId}:`, error);
       throw error;
     }
-  }
+  };
 
+  /**
+   * Alias for compatibility.
+   */
+  getAllUsers = async (userId) => {
+    return this.getUser(userId);
+  };
+
+  /**
+   * Initiates a check on a target user before starting chats.
+   * 
+   * @param {string} targetId 
+   * @param {string} currentUserId 
+   * @returns {Promise<Object>} Standardized connection info wrapper
+   */
   connectUser = async (targetId, currentUserId) => {
     try {
-      const response = await fetch(`http://localhost:8080/user/get/${targetId}`, { method: "GET" });
-      // const data = await response.json();
-      console.log(response.ok);
-      // console.log("Data is :- ", data);
-      if (response.ok) {
-        console.log("Inside the correct response :- ");
-        const data = await response.json();
-        console.log("Data is in connectUSr method :- ", data);
-        if (data && data.online) {
-          return {
-            success: true,
-            user: {
-              userId: data.userId,
-              nickname: data.userId,
-              avatarUrl: `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(data.userId)}`,
-              status: 'online'
-            }
-          };
-        } else {
-          throw new Error("User is offline or does not exist.");
+      const data = await this.getUser(targetId);
+      return {
+        success: true,
+        user: {
+          userId: data.userId,
+          nickname: data.nickName || data.userId,
+          avatarUrl: data.avatarUrl || `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(data.userId)}`,
+          status: (data.isOnline !== undefined ? data.isOnline : data.online) ? 'online' : 'offline'
         }
-      } else {
-        const errData = await response.json().catch(() => null);
-        throw new Error(errData?.errorMessage || errData?.message || "Failed to connect user.");
-      }
+      };
     } catch (error) {
-      console.error(error);
+      console.error(`Connect User validation failed for ${targetId}:`, error);
       throw error;
     }
-  }
+  };
 }
+
 const userService = new UserService();
 export default userService;
-
-// Puropose :- It is used to search that weather the searched user id online or not 
-
-// This is the java object returned by this service
-
-// public class SearchResDto {
-//     private String userId;
-//     private boolean isOnline;
-// }

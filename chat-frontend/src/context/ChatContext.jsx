@@ -1,118 +1,247 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useRef, useEffect } from 'react';
+import { useDispatch, useSelector } from 'react-redux';
 import { ChatContext } from './ChatContextInstance';
+import conversationService from '../services/conversationService';
+import messageService from '../services/messageService';
+import userService from '../services/userService';
+import {
+  setConversations,
+  setMessages,
+  addMessage as addMessageAction,
+  clearConversation as clearConversationAction,
+  removeConversation as removeConversationAction,
+  resetUnread,
+  addOnlineUser,
+  setLoadingConversations,
+  setLoadingMessages,
+  updateConversationSummary as updateConversationSummaryAction,
+  selectConversations,
+  selectAllMessages,
+  selectLoadingConversations,
+  selectLoadingMessages
+} from '../features/chat/chatSlice';
 
 /**
  * CHAT CONTEXT
  * 
- * Why Context API is used for messages instead of Redux:
- * 1. Performance and High-Frequency Dispatches:
- *    - In a real-time messaging app, messages arrive frequently (via WebSockets). Redux handles action dispatches globally.
- *      Dispatched actions run through all reducers and trigger updates down the complete Redux tree, which can cause frame drops and UI lags.
- *    - Context API allows us to isolate this high-frequency, rapid state change inside a specialized sub-tree, limiting unnecessary re-renders.
- * 2. Session-Only (Volatile) Lifecycle:
- *    - Per requirements, messages must exist *only* during the active browser session (no localStorage/IndexedDB/persistence).
- *      Context API is the idiomatic React solution for managing volatile, component-lifecycle-scoped states.
- * 3. Separation of Concerns:
- *    - Redux is kept clean and lightweight, managing only metadata (who is logged in, who is selected, who is online).
- *    - ChatContext manages the raw payload data (the logs of messages).
+ * Adapts React Context calls to the underlying Redux Chat Slice (single source of truth).
+ * This ensures compatibility for existing components utilizing the useChat hook.
  */
-
 export const ChatProvider = ({ children }) => {
-  // conversations is structured as:
-  // {
-  //   "rahul": [ { id, senderId, receiverId, content, timestamp }, ... ],
-  //   "aman": [ ... ]
-  // }
-  const [conversations, setConversations] = useState({});
+  const dispatch = useDispatch();
 
-  /**
-   * Helper to ensure a conversation array exists for a specific user ID.
-   * If it doesn't, we initialize it as an empty list.
-   */
-  const createConversation = useCallback((chatUserId) => {
-    if (!chatUserId) return;
-    setConversations((prev) => {
-      if (prev[chatUserId]) return prev; // Already exists
-      return {
-        ...prev,
-        [chatUserId]: [],
+  // Read state directly from Redux
+  const conversationList = useSelector(selectConversations);
+  const conversations = useSelector(selectAllMessages);
+  const loadingConversations = useSelector(selectLoadingConversations);
+  const loadingMessages = useSelector(selectLoadingMessages);
+
+  const loadingConversationsRef = useRef(loadingConversations);
+  const loadingMessagesRef = useRef(loadingMessages);
+
+  useEffect(() => {
+    loadingConversationsRef.current = loadingConversations;
+  }, [loadingConversations]);
+
+  useEffect(() => {
+    loadingMessagesRef.current = loadingMessages;
+  }, [loadingMessages]);
+
+  // Fetch conversation summaries from backend
+  const fetchConversations = useCallback(async (currentUserId) => {
+    if (!currentUserId || loadingConversationsRef.current) return;
+    dispatch(setLoadingConversations(true));
+    try {
+      const pageData = await conversationService.getConversationSummaries(currentUserId);
+      const content = pageData.content || [];
+
+      // Sort conversations chronologically (newest message first)
+      const sortedContent = [...content].sort((a, b) => {
+        if (!a.lastMessageTime && !b.lastMessageTime) return 0;
+        if (!a.lastMessageTime) return 1;
+        if (!b.lastMessageTime) return -1;
+        return new Date(b.lastMessageTime).getTime() - new Date(a.lastMessageTime).getTime();
+      });
+
+      // Normalize `online` status field to `isOnline` from backend response
+      const normalizedContent = sortedContent.map((c) => {
+        if (c.receiver) {
+          const isOnline = c.receiver.isOnline !== undefined ? c.receiver.isOnline : c.receiver.online;
+          return {
+            ...c,
+            receiver: {
+              ...c.receiver,
+              isOnline: !!isOnline
+            }
+          };
+        }
+        return c;
+      });
+
+      dispatch(setConversations(normalizedContent));
+
+      // Dispatch online status of peers to Redux onlineUsers list
+      normalizedContent.forEach((c) => {
+        if (c.receiver?.isOnline) {
+          dispatch(addOnlineUser(c.receiver.userId));
+        }
+      });
+    } catch (error) {
+      console.error('Fetch conversations error:', error);
+    } finally {
+      dispatch(setLoadingConversations(false));
+    }
+  }, [dispatch]);
+
+  // Fetch latest messages for a specific conversation
+  const fetchMessages = useCallback(async (chatUserId, conversationId, currentUserId) => {
+    if (!conversationId || !currentUserId || loadingMessagesRef.current) return;
+    dispatch(setLoadingMessages(true));
+    try {
+      const response = await messageService.getLatestMessages(conversationId);
+      const messagesList = response.content || [];
+
+      // Backend returns newest first. Reverse to display oldest first (chronological).
+      const reversed = [...messagesList].reverse().map((msg, index) => ({
+        id: msg.id || `${msg.senderId || msg.sender?.userId || 'sender'}-${msg.receivedAt || msg.sentAt || msg.createdAt || 'timestamp'}-${index}`,
+        senderId: msg.sender?.userId || msg.senderId,
+        receiverId: msg.receiver?.userId || msg.receiverId,
+        content: msg.content,
+        timestamp: msg.receivedAt || msg.sentAt || msg.createdAt || new Date().toISOString()
+      }));
+
+      // Cache under both conversationId (per layout instructions) and chatUserId (for hook lookup compatibility)
+      dispatch(setMessages({ key: conversationId, messages: reversed }));
+      dispatch(setMessages({ key: chatUserId, messages: reversed }));
+    } catch (error) {
+      console.error('Fetch messages error:', error);
+    } finally {
+      dispatch(setLoadingMessages(false));
+    }
+  }, [dispatch]);
+
+  // Mark messages as read for a conversation
+  const markAsRead = useCallback(async (chatUserId, conversationId, currentUserId) => {
+    if (!conversationId || !currentUserId) return;
+    try {
+      await messageService.markAsDelivered(currentUserId);
+      await messageService.markAsRead(conversationId, currentUserId);
+      dispatch(resetUnread(chatUserId));
+    } catch (error) {
+      console.error('Mark read error:', error);
+    }
+  }, [dispatch]);
+
+  // Start or open a conversation
+  const startConversation = useCallback(async (receiverId, currentUserId) => {
+    if (!receiverId || !currentUserId) return null;
+
+    // First check if conversation already exists in our local list
+    const existing = conversationList.find(
+      (c) => c.receiver.userId.toLowerCase() === receiverId.toLowerCase()
+    );
+
+    if (existing) {
+      return existing;
+    }
+
+    // Call backend to create/get conversation
+    try {
+      // Fetch details of the receiver user to verify existence
+      const userProfile = await userService.getUser(receiverId);
+
+      // Create conversation
+      const created = await conversationService.createConversation(receiverId, currentUserId);
+
+      const newSummary = {
+        conversationId: created.conversationId,
+        receiver: {
+          userId: userProfile.userId,
+          nickName: userProfile.nickName || userProfile.userId,
+          avatarUrl: userProfile.avatarUrl,
+          isOnline: userProfile.isOnline !== undefined ? userProfile.isOnline : userProfile.online
+        },
+        lastMessage: null,
+        lastMessageTime: null,
+        unreadCount: 0
       };
-    });
-  }, []);
 
-  /**
-   * Adds a single message to a conversation.
-   * Automatically creates the conversation container if it doesn't already exist.
-   * 
-   * PLACEHOLDER NOTE FOR BACKEND DEVELOPER:
-   * When you implement your WebSocket / STOMP subscription on '/user/queue/messages',
-   * you should dispatch new messages received from the server into this function:
-   * 
-   *    const onMessageReceived = (msg) => {
-   *       const chatPartnerId = msg.senderId === currentUserId ? msg.receiverId : msg.senderId;
-   *       addMessage(chatPartnerId, msg);
-   *       if (chatPartnerId !== selectedChatUserId) {
-   *          dispatch(incrementUnread(chatPartnerId));
-   *       }
-   *    }
-   */
-  const addMessage = useCallback((chatUserId, message) => {
-    if (!chatUserId || !message) return;
-    setConversations((prev) => {
-      const currentList = prev[chatUserId] || [];
-      // Prevent duplicates by checking message ID
-      if (currentList.some((m) => m.id === message.id)) {
-        return prev;
+      dispatch(setConversations([newSummary, ...conversationList]));
+
+      // If the newly added user is online, dispatch addOnlineUser to populate onlineUsers list in Redux
+      const isPeerOnline = userProfile.isOnline !== undefined ? userProfile.isOnline : userProfile.online;
+      if (isPeerOnline) {
+        dispatch(addOnlineUser(receiverId));
       }
-      return {
-        ...prev,
-        [chatUserId]: [...currentList, message],
-      };
-    });
-  }, []);
 
-  /**
-   * Removes a conversation completely from the sidebar list and memory.
-   */
-  const removeConversation = useCallback((chatUserId) => {
-    if (!chatUserId) return;
-    setConversations((prev) => {
-      const copy = { ...prev };
-      delete copy[chatUserId];
-      return copy;
-    });
-  }, []);
+      // Initialize messages list in cache under both keys
+      dispatch(setMessages({ key: created.conversationId, messages: [] }));
+      dispatch(setMessages({ key: receiverId, messages: [] }));
 
-  /**
-   * Clears the messages in a conversation without deleting the conversation key itself.
-   */
+      return newSummary;
+    } catch (error) {
+      console.error('Start conversation error:', error);
+      throw error;
+    }
+  }, [conversationList, dispatch]);
+
+  // Appends a single message locally to the message logs cache
+  const addMessage = useCallback((chatUserId, message, force = true) => {
+    if (!chatUserId || !message) return;
+
+    // Resolve conversationId from conversations list
+    const conv = conversationList.find(
+      (c) => c.receiver.userId.toLowerCase() === chatUserId.toLowerCase()
+    );
+
+    if (conv && conv.conversationId) {
+      dispatch(addMessageAction({ key: conv.conversationId, message, force }));
+    }
+    dispatch(addMessageAction({ key: chatUserId, message, force }));
+  }, [conversationList, dispatch]);
+
+  // Updates the conversation summary (last message text, timestamp, unread count)
+  const updateConversationSummary = useCallback((chatUserId, content, timestamp, incrementUnread = false, conversationId = null) => {
+    dispatch(updateConversationSummaryAction({ chatUserId, content, timestamp, incrementUnread, conversationId }));
+  }, [dispatch]);
+
+  // Clear conversation locally (resolves ChatHeader.jsx runtime crash)
   const clearConversation = useCallback((chatUserId) => {
-    if (!chatUserId) return;
-    setConversations((prev) => {
-      if (!prev[chatUserId]) return prev;
-      return {
-        ...prev,
-        [chatUserId]: [],
-      };
-    });
-  }, []);
+    dispatch(clearConversationAction(chatUserId));
+  }, [dispatch]);
 
-  /**
-   * Helper to retrieve messages for a specific conversation.
-   */
-  const getConversation = useCallback((chatUserId) => {
-    return conversations[chatUserId] || [];
-  }, [conversations]);
+  // Remove conversation locally (resolves ChatHeader.jsx runtime crash)
+  const removeConversation = useCallback((chatUserId) => {
+    dispatch(removeConversationAction(chatUserId));
+  }, [dispatch]);
 
-  // Memoize value to avoid unnecessary downstream renders
   const contextValue = useMemo(() => ({
+    conversationList,
     conversations,
+    loadingConversations,
+    loadingMessages,
+    fetchConversations,
+    fetchMessages,
+    markAsRead,
+    startConversation,
     addMessage,
-    createConversation,
-    removeConversation,
+    updateConversationSummary,
     clearConversation,
-    getConversation,
-  }), [conversations, addMessage, createConversation, removeConversation, clearConversation, getConversation]);
+    removeConversation
+  }), [
+    conversationList,
+    conversations,
+    loadingConversations,
+    loadingMessages,
+    fetchConversations,
+    fetchMessages,
+    markAsRead,
+    startConversation,
+    addMessage,
+    updateConversationSummary,
+    clearConversation,
+    removeConversation
+  ]);
 
   return (
     <ChatContext.Provider value={contextValue}>

@@ -1,37 +1,11 @@
-import { useState, useRef } from 'react';
+import React, { useState, useRef, memo } from 'react';
 
 /**
  * REUSABLE MESSAGE INPUT COMPONENT
  * 
- * Why this component exists:
- * - Provides the text input and send button at the bottom of the active conversation.
- * - Handles input validation (disallowing empty or whitespace-only messages).
- * 
- * PLACEHOLDER FOR TYPING STATUS INTEGRATION:
- * The backend developer can easily throttle typing broadcasts using this local state:
- * 
- *   useEffect(() => {
- *      if (!messageText.trim()) return;
- *      
- *      // Send typing event to destination '/app/chat.typing'
- *      stompClient.send("/app/chat.typing", {}, JSON.stringify({
- *         senderId: currentUserId,
- *         receiverId: chatUserId,
- *         typing: true
- *      }));
- *      
- *      const delayDebounceFn = setTimeout(() => {
- *         stompClient.send("/app/chat.typing", {}, JSON.stringify({
- *            senderId: currentUserId,
- *            receiverId: chatUserId,
- *            typing: false
- *         }));
- *      }, 2000);
- *      
- *      return () => clearTimeout(delayDebounceFn);
- *   }, [messageText]);
+ * Provides input messaging capabilities. Wrapped in React.memo.
  */
-export const MessageInput = ({ onSendMessage, chatUserId }) => {
+export const MessageInput = memo(({ onSendMessage, chatUserId }) => {
   const [messageText, setMessageText] = useState('');
   const inputRef = useRef(null);
 
@@ -54,11 +28,6 @@ export const MessageInput = ({ onSendMessage, chatUserId }) => {
         flex items-center gap-2.5 z-10
       "
     >
-      
-      {/* 
-        Input Box 
-        Uses modern transition effects and handles keystrokes.
-      */}
       <input
         ref={inputRef}
         type="text"
@@ -78,16 +47,12 @@ export const MessageInput = ({ onSendMessage, chatUserId }) => {
         "
       />
 
-      {/* 
-        Send Button
-        Disables dynamically when input is empty.
-      */}
       <button
         type="submit"
         disabled={!messageText.trim()}
         className={`
           p-2.5 rounded-2xl flex items-center justify-center cursor-pointer
-          transition-all duration-250 select-none shrink-0
+          transition-all duration-255 select-none shrink-0
           ${
             messageText.trim() 
               ? 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-md active:scale-95' 
@@ -113,6 +78,6 @@ export const MessageInput = ({ onSendMessage, chatUserId }) => {
 
     </form>
   );
-};
+});
 
 export default MessageInput;
