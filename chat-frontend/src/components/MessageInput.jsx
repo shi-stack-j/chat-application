@@ -1,18 +1,58 @@
-import React, { useState, useRef, memo } from 'react';
+import { useState, useRef, memo } from 'react';
 
 /**
  * REUSABLE MESSAGE INPUT COMPONENT
  * 
  * Provides input messaging capabilities. Wrapped in React.memo.
  */
-export const MessageInput = memo(({ onSendMessage, chatUserId }) => {
+export const MessageInput = memo(({ onSendMessage, chatUserId, onTypingStatusChange }) => {
   const [messageText, setMessageText] = useState('');
   const inputRef = useRef(null);
+  const typingTimeoutRef = useRef(null);
+  const isTypingRef = useRef(false);
+
+  const handleInputChange = (e) => {
+    const val = e.target.value;
+    setMessageText(val);
+
+    if (val.trim() && !isTypingRef.current) {
+      isTypingRef.current = true;
+      if (onTypingStatusChange) {
+        onTypingStatusChange(true);
+      }
+    }
+
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+    }
+
+    if (!val.trim()) {
+      isTypingRef.current = false;
+      if (onTypingStatusChange) {
+        onTypingStatusChange(false);
+      }
+    } else {
+      typingTimeoutRef.current = setTimeout(() => {
+        isTypingRef.current = false;
+        if (onTypingStatusChange) {
+          onTypingStatusChange(false);
+        }
+      }, 3000);
+    }
+  };
 
   const handleSubmit = (e) => {
     e.preventDefault();
     const cleanText = messageText.trim();
     if (!cleanText) return;
+
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+    }
+    isTypingRef.current = false;
+    if (onTypingStatusChange) {
+      onTypingStatusChange(false);
+    }
 
     onSendMessage(cleanText);
     setMessageText('');
@@ -32,7 +72,7 @@ export const MessageInput = memo(({ onSendMessage, chatUserId }) => {
         ref={inputRef}
         type="text"
         value={messageText}
-        onChange={(e) => setMessageText(e.target.value)}
+        onChange={handleInputChange}
         placeholder={`Message ${chatUserId}...`}
         autoFocus
         className="

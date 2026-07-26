@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
-import { selectSelectedChatUserId, incrementUnread, addOnlineUser, updateUserPresence } from '../features/chat/chatSlice';
+import { selectSelectedChatUserId, incrementUnread, addOnlineUser, updateUserPresence, setTypingStatus, updateMessageStatus, updateSingleMessageStatus } from '../features/chat/chatSlice';
 import { setConnectionState } from '../features/websocket/websocketSlice';
 import { selectCurrentUserId, setCurrentUser } from '../features/auth/authSlice';
 import AppLayout from '../layouts/AppLayout';
@@ -9,6 +9,7 @@ import ChatWindow from '../components/ChatWindow';
 import useChat from '../hooks/useChat';
 import chatService from '../services/chatService';
 import authService from '../services/authService';
+import userService from '../services/userService';
 import toastHelper from '../utils/toastHelper';
 
 /**
@@ -85,26 +86,13 @@ export const ChatPage = () => {
           dispatch(setConnectionState('connected'));
           toastHelper.connection.connected(currentUserId);
 
-          const messagesQueue = `/queue/messages/${currentUserId}`;
-          console.log('Subscribed to STOMP destination:', messagesQueue);
-
+          // 1. Subscribe to user-specific messages destination (convertAndSendToUser)
+          const messagesQueue = '/user/queue/messages';
+          console.log('Subscribing to STOMP messages destination:', messagesQueue);
           chatService.subscribeToMessages(messagesQueue, (msg) => {
             try {
               const body = JSON.parse(msg.body);
-              console.log('STOMP Message/Event received:', body);
-
-              // Route by eventType if it is a structured presence event
-              if (body && body.eventType) {
-                const { eventType, payload } = body;
-                if (eventType === 'USER_ONLINE') {
-                  dispatch(updateUserPresence({ userId: payload.userId, online: true }));
-                } else if (eventType === 'USER_OFFLINE') {
-                  dispatch(updateUserPresence({ userId: payload.userId, online: false }));
-                } else {
-                  console.log('Unhandled WebSocket event type:', eventType);
-                }
-                return;
-              }
+              console.log('STOMP Message received:', body);
 
               const { conversationId, content, senderId, receivedAt } = body;
 
@@ -147,10 +135,62 @@ export const ChatPage = () => {
                 // Show toast banner
                 toastHelper.chat.newMessage(senderId, content);
               }
+
+              // Automatically send Delivery ACK for the newly received incoming message
+              const incomingMessageId = body.id || body.messageId;
+              if (incomingMessageId) {
+                try {
+                  chatService.sendDeliveryAck(incomingMessageId);
+                } catch (ackErr) {
+                  console.error('Failed to send automatic delivery ack:', ackErr);
+                }
+              }
             } catch (err) {
               console.error('Failed to parse incoming WebSocket message:', err);
             }
           });
+
+          // 2. Subscribe to user-specific notifications destinations
+          const handleNotification = (msg) => {
+            try {
+              const body = JSON.parse(msg.body);
+              console.log('STOMP Notification Event received:', body);
+
+              if (body && body.eventType) {
+                const { eventType, payload } = body;
+                if (eventType === 'USER_ONLINE') {
+                  dispatch(updateUserPresence({ userId: payload.userId, online: true }));
+                } else if (eventType === 'USER_OFFLINE') {
+                  dispatch(updateUserPresence({ userId: payload.userId, online: false }));
+                } else if (eventType === 'USER_TYPING') {
+                  dispatch(setTypingStatus({ userId: payload.senderId, typing: payload.typing }));
+                } else if (eventType === 'USER_MESSAGE') {
+                  if (payload.status === 'DELIVERED' && payload.messageId) {
+                    dispatch(updateSingleMessageStatus({
+                      conversationId: payload.conversationId,
+                      messageId: payload.messageId,
+                      status: payload.status,
+                      currentUserId: currentUserIdRef.current
+                    }));
+                  } else {
+                    dispatch(updateMessageStatus({
+                      conversationId: payload.conversationId,
+                      status: payload.status,
+                      currentUserId: currentUserIdRef.current
+                    }));
+                  }
+                } else {
+                  console.log('Unhandled WebSocket event type:', eventType);
+                }
+              }
+            } catch (err) {
+              console.error('Failed to parse incoming notification event:', err);
+            }
+          };
+
+          console.log('Subscribing to STOMP notifications destination /user/queue/notifications');
+          chatService.subscribeToMessages('/user/queue/notifications', handleNotification);
+          chatService.subscribeToMessages('/user/queue/notification', handleNotification);
         },
         // onDisconnect / error
         async () => {
@@ -165,21 +205,27 @@ export const ChatPage = () => {
             try {
               const credentials = { userId: currentUserId, password: cachedPassword };
               const loginResponse = await authService.login(credentials);
+              const jwtToken = loginResponse.jwtToken;
               
-              localStorage.setItem('token', loginResponse.token);
-              dispatch(
-                setCurrentUser({
-                  userId: loginResponse.userId,
-                  nickname: loginResponse.nickName || loginResponse.userId,
-                  avatarUrl: loginResponse.avatarUrl,
-                  token: loginResponse.token
-                })
-              );
+              if (jwtToken) {
+                localStorage.setItem('token', jwtToken);
+                
+                // Fetch current user profile with new token to refresh auth status
+                const profile = await userService.getCurrentUser(jwtToken);
+                dispatch(
+                  setCurrentUser({
+                    userId: profile.userId,
+                    nickname: profile.nickName || profile.userId,
+                    avatarUrl: profile.avatarUrl,
+                    token: jwtToken
+                  })
+                );
 
-              // Schedule reconnect retry in 5 seconds
-              reconnectTimeoutId = setTimeout(() => {
-                establishWebSocketConnection(loginResponse.token);
-              }, 5000);
+                // Schedule reconnect retry in 5 seconds
+                reconnectTimeoutId = setTimeout(() => {
+                  establishWebSocketConnection(jwtToken);
+                }, 5000);
+              }
             } catch (error) {
               console.error('Background token refresh failed:', error);
             }

@@ -11,8 +11,5 @@ import lombok.Setter;
 @NoArgsConstructor
 //Description :- This dto is used to return the response from the backend after being loggedIn
 public class LogResDto {
-    private String userId;
-    private String avatarUrl;
-    private String nickName;
-    private String token;
+    private String jwtToken;
 }

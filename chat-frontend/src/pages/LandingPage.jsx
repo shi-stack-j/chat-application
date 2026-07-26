@@ -6,6 +6,7 @@ import { setGlobalLoading } from '../features/ui/uiSlice';
 import { setOnlineUsers } from '../features/chat/chatSlice';
 import toastHelper from '../utils/toastHelper';
 import authService from '../services/authService';
+import userService from '../services/userService';
 
 /**
  * LANDING PAGE COMPONENT
@@ -93,17 +94,24 @@ export const LandingPage = () => {
         };
 
         const loginResponse = await authService.login(credentials);
+        const jwtToken = loginResponse.jwtToken;
+        if (!jwtToken) {
+          throw new Error('No JWT token returned from authentication server.');
+        }
+        
+        // Store JWT token in localStorage for WebSocket connection handshake and API calls
+        localStorage.setItem('token', jwtToken);
 
-        // Store UUID token in localStorage for WebSocket connection handshake
-        localStorage.setItem('token', loginResponse.token);
+        // Fetch current user profile from backend using the newly acquired token
+        const profile = await userService.getCurrentUser(jwtToken);
 
         // Save active user profile in Redux store
         dispatch(
           setCurrentUser({
-            userId: loginResponse.userId,
-            nickname: loginResponse.nickName || loginResponse.userId,
-            avatarUrl: loginResponse.avatarUrl,
-            token: loginResponse.token
+            userId: profile.userId,
+            nickname: profile.nickName || profile.userId,
+            avatarUrl: profile.avatarUrl,
+            token: jwtToken
           })
         );
 
@@ -113,7 +121,7 @@ export const LandingPage = () => {
         // Reset list of online users
         dispatch(setOnlineUsers([]));
 
-        toastHelper.connection.connected(loginResponse.userId);
+        toastHelper.connection.connected(profile.userId);
 
         // Navigate to the secure chat portal
         navigate('/chat');

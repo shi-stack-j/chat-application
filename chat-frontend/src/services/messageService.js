@@ -1,31 +1,4 @@
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/chat-app/v1';
-
-/**
- * Handles HTTP response validation and parses body/errors.
- */
-const handleResponse = async (response) => {
-  if (!response.ok) {
-    const errText = await response.text();
-    let errMsg = 'API Request failed.';
-    try {
-      const errJson = JSON.parse(errText);
-      errMsg = errJson.message || errJson.errorMessage || errMsg;
-    } catch {
-      errMsg = errText || errMsg;
-    }
-    throw new Error(errMsg);
-  }
-
-  const contentType = response.headers.get('content-type');
-  if (contentType && contentType.includes('application/json')) {
-    const result = await response.json();
-    console.log("Response is :- ", result);
-    return result;
-  }
-  const result = await response.text();
-  console.log("Response is :- ", result);
-  return result;
-};
+import apiClient from './apiClient';
 
 class MessageService {
   /**
@@ -39,19 +12,11 @@ class MessageService {
    */
   getLatestMessages = async (conversationId, page = 0, size = 20) => {
     try {
-
       console.log("Conversation ID is :- ", conversationId);
-      const response = await fetch(
-        `${API_BASE_URL}/messages/get/latestMessages?page=${page}&size=${size}&sort=sentAt,desc`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({ conversationId })
-        }
+      return await apiClient.post(
+        `/messages/get/latestMessages?page=${page}&size=${size}&sort=sentAt,desc`,
+        { conversationId }
       );
-      return await handleResponse(response);
     } catch (error) {
       console.error(`Get Latest Messages API Error for ID ${conversationId}:`, error);
       throw error;
@@ -67,16 +32,12 @@ class MessageService {
    * @returns {Promise<string>} Status message
    */
   markAsRead = async (conversationId, currentUserId) => {
+    console.log(`Marking messages as read for conversation ${conversationId} and user ${currentUserId}`);
     try {
-      const response = await fetch(`${API_BASE_URL}/messages/mark/read`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-User-Id': currentUserId
-        },
-        body: JSON.stringify({ conversationId })
-      });
-      return await handleResponse(response);
+      return await apiClient.post(
+        '/messages/mark/read',
+        { conversationId }
+      );
     } catch (error) {
       console.error(`Mark As Read API Error for conversation ${conversationId}:`, error);
       throw error;
@@ -91,14 +52,11 @@ class MessageService {
    * @returns {Promise<string>} Status message
    */
   markAsDelivered = async (currentUserId) => {
+    console.log(`Marking messages as delivered for user ${currentUserId}`);
     try {
-      const response = await fetch(`${API_BASE_URL}/messages/mark/delivered`, {
-        method: 'POST',
-        headers: {
-          'X-User-Id': currentUserId
-        }
-      });
-      return await handleResponse(response);
+      return await apiClient.post(
+        '/messages/mark/delivered',null
+      );
     } catch (error) {
       console.error(`Mark As Delivered API Error for user ${currentUserId}:`, error);
       throw error;
@@ -112,15 +70,9 @@ class MessageService {
    * @param {string} currentUserId 
    * @returns {Promise<number>} Unread count
    */
-  getUnreadCounts = async (currentUserId) => {
+  getUnreadCounts = async () => {
     try {
-      const response = await fetch(`${API_BASE_URL}/messages/get/unreadCounts`, {
-        method: 'GET',
-        headers: {
-          'X-UserId': currentUserId
-        }
-      });
-      const data = await handleResponse(response);
+      const data = await apiClient.get('/messages/get/unreadCounts', {});
       return parseInt(data, 10) || 0;
     } catch (error) {
       console.error('Get Unread Counts API Error:', error);
@@ -139,20 +91,20 @@ class MessageService {
    */
   sendMessageFallback = async (message, currentUserId, conversationId) => {
     try {
-      const response = await fetch(`${API_BASE_URL}/messages/send/message/`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Sender-Id': currentUserId,
-          'X-Conversation-Id': String(conversationId)
-        },
-        body: JSON.stringify({
+      return await apiClient.post(
+        '/messages/send/message/',
+        {
           receiver: message.receiver,
           content: message.content,
           sendAt: null // Set automatically by backend
-        })
-      });
-      return await handleResponse(response);
+        },
+        {
+          headers: {
+            'X-Sender-Id': currentUserId,
+            'X-Conversation-Id': String(conversationId)
+          }
+        }
+      );
     } catch (error) {
       console.error('Send Message Fallback API Error:', error);
       throw error;

@@ -1,6 +1,7 @@
-import React, { useEffect, useRef, useMemo } from 'react';
+import { useEffect, useRef, useMemo } from 'react';
 import { useSelector } from 'react-redux';
 import { selectCurrentUserId } from '../features/auth/authSlice';
+import { selectTypingUsers } from '../features/chat/chatSlice';
 import MessageBubble from './MessageBubble';
 import UserAvatar from './UserAvatar';
 
@@ -20,11 +21,11 @@ const formatDateLabel = (dateString) => {
     } else if (date.toDateString() === yesterday.toDateString()) {
       return 'Yesterday';
     } else {
-      return date.toLocaleDateString([], { 
-        weekday: 'long', 
-        year: 'numeric', 
-        month: 'long', 
-        day: 'numeric' 
+      return date.toLocaleDateString([], {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
       });
     }
   } catch {
@@ -40,12 +41,14 @@ const formatDateLabel = (dateString) => {
  */
 export const MessageList = ({ messages = [], chatUserId }) => {
   const currentUserId = useSelector(selectCurrentUserId);
+  const typingUsers = useSelector(selectTypingUsers) || {};
+  const isTyping = typingUsers[chatUserId.toLowerCase()];
   const bottomRef = useRef(null);
 
-  // Auto-scroll to bottom when new messages arrive or active conversation changes
+  // Auto-scroll to bottom when new messages arrive, active conversation changes, or typing status changes
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, chatUserId]);
+  }, [messages, chatUserId, isTyping]);
 
   // Chronologically processes the raw message feed, weaving in date separators and sender groupings
   const chatElements = useMemo(() => {
@@ -70,8 +73,8 @@ export const MessageList = ({ messages = [], chatUserId }) => {
 
       // 2. Identify if this message was sent by the same user as the previous one
       const prevMsg = idx > 0 ? messages[idx - 1] : null;
-      const isConsecutive = prevMsg && 
-        prevMsg.senderId === msg.senderId && 
+      const isConsecutive = prevMsg &&
+        prevMsg.senderId === msg.senderId &&
         (new Date(msg.timestamp) - new Date(prevMsg.timestamp)) < 120000; // Sent within 2 minutes of each other
 
       elements.push({
@@ -104,8 +107,8 @@ export const MessageList = ({ messages = [], chatUserId }) => {
         chatElements.map((el) => {
           if (el.type === 'separator') {
             return (
-              <div 
-                key={el.id} 
+              <div
+                key={el.id}
                 className="flex items-center justify-center my-6 select-none animate-fade-in"
               >
                 <div className="w-1/6 border-b border-slate-200 dark:border-slate-800/80" />
@@ -128,6 +131,17 @@ export const MessageList = ({ messages = [], chatUserId }) => {
             />
           );
         })
+      )}
+
+      {isTyping && (
+        <div className="flex items-center gap-2.5 text-xs text-slate-400 dark:text-slate-500 pl-4 py-2 select-none animate-fade-in">
+          <div className="flex gap-1.25 items-center bg-slate-100 dark:bg-slate-800/80 px-3.5 py-2.5 rounded-2xl rounded-tl-none border border-slate-200/20 dark:border-slate-700/30">
+            <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 dark:bg-indigo-400 animate-bounce" style={{ animationDelay: '0ms' }} />
+            <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 dark:bg-indigo-400 animate-bounce" style={{ animationDelay: '150ms' }} />
+            <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 dark:bg-indigo-400 animate-bounce" style={{ animationDelay: '300ms' }} />
+            <span className="ml-1 text-[11px] font-semibold text-slate-500 dark:text-slate-400">{chatUserId} is typing</span>
+          </div>
+        </div>
       )}
 
       {/* Scroll lock anchor */}

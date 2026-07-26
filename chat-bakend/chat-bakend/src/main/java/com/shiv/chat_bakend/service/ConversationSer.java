@@ -39,22 +39,30 @@ public class ConversationSer {
     private OnlinePresenceRepo onlinePresenceRepo;
     @Autowired
     private OnlinePresenceSer onlinePresenceSer;
+    @Autowired
+    private CurrentUserSer currentUserSer;
     //    This method is used to return the conversation of the user
-    public ResponseEntity<?> getUserConversations(String userId,Pageable pageable){
+//    IT is not getting used anywhere inside the frontend
+    public ResponseEntity<?> getUserConversations(Pageable pageable){
+        String userId= currentUserSer.getUserId();
         if(userId==null || userId.isBlank())return ResponseEntity.badRequest().body("UserId is not correct");
         Page<ConversationEn> conversationEns=conversationRepo.findUserConversations(userId,pageable);
-
         return ResponseEntity.ok(conversationEns);
     }
 
 //    This service is used to fetch the summary of the service
-    public ResponseEntity<?> getConversationSummary(String userId,Pageable pageable) {
+//    Not used
+    public ResponseEntity<?> getConversationSummary(Pageable pageable) {
+        String userId= currentUserSer.getUserId();
         if (userId == null || userId.isBlank()) return ResponseEntity.badRequest().body("UserId is not valid");
         Page<ConversationEn> conversationEns = conversationRepo.findUserConversations(userId, pageable);
         Page<ConversationSummaryResDto> conversationResponse = conversationEns.map(conversationEn -> convertToSummary(conversationEn, userId));
         return ResponseEntity.ok(conversationResponse);
     }
+
+//    Not used
     public ConversationSummaryResDto convertToSummary(ConversationEn conversationEn,String user_id){
+
         if(conversationEn==null || user_id==null || user_id.isBlank())throw new RuntimeException("Conversation details or user id is not valid");
         long unreadMessages=messageDeliveryRepo.countUnreadMessagesByConversation(user_id,conversationEn.getId());
         Pageable pageable=PageRequest.of(0,1);
@@ -105,7 +113,9 @@ public class ConversationSer {
 //    This method is used to
 //    Return conversation if exists
 //    create conversation if not exists
-    public ResponseEntity<?> getOrCreateConversation(String senderId, ConversationReqDto conversationReqDto){
+//    Done
+    public ResponseEntity<?> getOrCreateConversation(ConversationReqDto conversationReqDto){
+        String senderId= currentUserSer.getUserId();
         if(senderId==null || senderId.isBlank() )throw new RuntimeException("Sender id is not correct");
         if(conversationReqDto==null )throw new RuntimeException("Conversation request is not valid");
         String userOne,userTwo;
@@ -118,6 +128,9 @@ public class ConversationSer {
         }
         Optional<ConversationEn> conversationEn=conversationRepo.findByUserOne_UserIdAndUserTwo_UserId(userOne,userTwo);
         if(conversationEn.isPresent()){
+            if(!conversationEn.get().getUserOne().equals(senderId) && !conversationEn.get().getUserTwo().equals(senderId)){
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Conversation does not belongs to you");
+            }
             ConversationDto conversationDto=ConversationMapper.toConversationDto(conversationEn.get());
             return ResponseEntity.ok(conversationDto);
         }
@@ -139,4 +152,9 @@ public class ConversationSer {
         return Optional.of(save);
     }
 
+
+//    Flow for the conversations will be
+//    When user will login
+//    -> Their will we call to fetch all the conversations summary
+//    -> When user will click on particular conversation then their will we call to fetch the messages
 }

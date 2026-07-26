@@ -2,6 +2,7 @@ package com.shiv.chat_bakend.model;
 
 
 
+import com.shiv.chat_bakend.enums.RoleEnum;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
@@ -32,15 +33,6 @@ public class UserEn {
     private String nickName;
     @Column(nullable = false)
     @NotBlank(message = "Password is required")
-    @Size(
-            min = 8,
-            max = 20,
-            message = "Password must be between 8 and 20 characters"
-    )
-    @Pattern(
-            regexp = "^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[@$!%*?&]).+$",
-            message = "Password must contain uppercase, lowercase, digit and special character"
-    )
     private String password;
     private String avatarUrl;
     private boolean isActive=true;
@@ -52,4 +44,7 @@ public class UserEn {
 
     private LocalDateTime deactivatedOn;
     private LocalDateTime deletedOn;
+
+    @Enumerated(EnumType.STRING)
+    private RoleEnum role;
 }

@@ -1,17 +1,10 @@
 package com.shiv.chat_bakend.controller;
 
-import com.shiv.chat_bakend.dto.conversation.ConversationSummaryResDto;
-import com.shiv.chat_bakend.enums.MessageStatusEnum;
-import com.shiv.chat_bakend.repository.ConversationRepo;
 import com.shiv.chat_bakend.repository.MessageDeliveryRepo;
-import com.shiv.chat_bakend.service.ConversationSer;
-import jdk.jfr.Category;
-import jdk.jfr.RecordingState;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 

@@ -1,5 +1,6 @@
 import { useSelector, useDispatch } from 'react-redux';
-import { selectOnlineUsers, clearSelectedChat, selectConversations } from '../features/chat/chatSlice';
+import { selectOnlineUsers, clearSelectedChat, selectConversations, selectTypingUsers } from '../features/chat/chatSlice';
+import { selectConnectionState } from '../features/websocket/websocketSlice';
 import { setSidebarOpen } from '../features/ui/uiSlice';
 import UserAvatar from './UserAvatar';
 import useChat from '../hooks/useChat';
@@ -17,14 +18,18 @@ export const ChatHeader = ({ chatUserId }) => {
   const dispatch = useDispatch();
   const onlineUsers = useSelector(selectOnlineUsers);
   const conversations = useSelector(selectConversations);
+  const connectionState = useSelector(selectConnectionState);
+  const typingUsers = useSelector(selectTypingUsers) || {};
   const { clearConversation, removeConversation } = useChat();
 
   const activeSummary = conversations.find(
     (c) => c.receiver.userId.toLowerCase() === chatUserId.toLowerCase()
   );
 
-  const isOnline = onlineUsers.some(id => id.toLowerCase() === chatUserId.toLowerCase()) || 
-                   (activeSummary && (activeSummary.receiver.isOnline || activeSummary.receiver.online));
+  const isOnline = onlineUsers.some(id => id.toLowerCase() === chatUserId.toLowerCase()) ||
+    (activeSummary && (activeSummary.receiver.isOnline || activeSummary.receiver.online));
+
+  const isTyping = typingUsers[chatUserId.toLowerCase()];
 
   const handleClearChat = () => {
     if (window.confirm(`Are you sure you want to clear all messages with ${chatUserId}?`)) {
@@ -48,10 +53,10 @@ export const ChatHeader = ({ chatUserId }) => {
       border-b border-slate-200 dark:border-slate-800/80
       z-10 shadow-xs
     ">
-      
+
       {/* User info left side */}
       <div className="flex items-center gap-3 min-w-0">
-        
+
         {/* Mobile menu toggle button */}
         <button
           onClick={() => dispatch(setSidebarOpen(true))}
@@ -68,19 +73,39 @@ export const ChatHeader = ({ chatUserId }) => {
 
         {/* Name and Status Description */}
         <div className="flex flex-col min-w-0">
-          <h3 className="font-semibold text-sm text-slate-800 dark:text-slate-100 truncate">
-            {chatUserId}
-          </h3>
+          <div className="flex items-center gap-2">
+            <h3 className="font-semibold text-sm text-slate-800 dark:text-slate-100 truncate">
+              {chatUserId}
+            </h3>
+            {connectionState !== 'connected' && (
+              <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
+                connectionState === 'connecting'
+                  ? 'bg-amber-100 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 animate-pulse'
+                  : 'bg-red-100 dark:bg-red-950/40 text-red-600 dark:text-red-400'
+              }`}>
+                {connectionState === 'connecting' ? 'Connecting...' : 'Offline'}
+              </span>
+            )}
+          </div>
           <span className="text-[11px] text-slate-400 dark:text-slate-500 flex items-center gap-1.5 font-medium">
-            <span className={`w-1.5 h-1.5 rounded-full ${isOnline ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`}></span>
-            {isOnline ? 'Active Now' : 'Offline'}
+            {isTyping ? (
+              <>
+                <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-bounce" />
+                <span className="text-indigo-600 dark:text-indigo-400 font-semibold animate-pulse">typing...</span>
+              </>
+            ) : (
+              <>
+                <span className={`w-1.5 h-1.5 rounded-full ${isOnline ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`}></span>
+                <span>{isOnline ? 'Active Now' : 'Offline'}</span>
+              </>
+            )}
           </span>
         </div>
       </div>
 
       {/* Action actions right side */}
       <div className="flex items-center gap-1">
-        
+
         {/* Clear chat logs */}
         <button
           onClick={handleClearChat}

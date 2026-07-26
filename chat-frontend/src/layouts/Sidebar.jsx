@@ -7,6 +7,7 @@ import SearchBar from '../components/SearchBar';
 import OnlineUsersList from '../components/OnlineUsersList';
 import ConversationList from '../components/ConversationList';
 import toastHelper from '../utils/toastHelper';
+import chatService from '../services/chatService';
 
 /**
  * SIDEBAR CONTAINER LAYOUT
@@ -27,7 +28,10 @@ export const Sidebar = () => {
   const handleLogout = () => {
     if (window.confirm('Are you sure you want to exit? Your message session history will be cleared.')) {
       toastHelper.info(`Session cleared for ${currentUser.currentUserId}`);
+      chatService.disconnect();
       localStorage.removeItem('token');
+      localStorage.removeItem('userId');
+      sessionStorage.removeItem('cached_password');
       dispatch(clearCurrentUser());
       dispatch(clearSelectedChat());
       dispatch(setSearchQuery(''));

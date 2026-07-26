@@ -19,6 +19,7 @@ const initialState = {
   messages: {}, // Keyed by conversationId (number) or chatUserId (string) -> Array of ChatMessage
   unreadCounts: {}, // Keyed by chatUserId -> count
   onlineUsers: [], // Array of online userIds
+  typingUsers: {}, // Keyed by chatUserId -> boolean
   searchQuery: '',
   loadingConversations: false,
   loadingMessages: false
@@ -225,12 +226,79 @@ const chatSlice = createSlice({
         return c;
       });
     },
+    setTypingStatus: (state, action) => {
+      const { userId, typing } = action.payload;
+      state.typingUsers[userId.toLowerCase()] = typing;
+    },
+    updateMessageStatus: (state, action) => {
+      const { conversationId, status, currentUserId } = action.payload;
+      const conv = state.conversations.find((c) => c.conversationId === conversationId);
+      const keys = [conversationId];
+      if (conv) {
+        keys.push(conv.receiver.userId);
+      }
+      keys.forEach((key) => {
+        if (state.messages[key]) {
+          state.messages[key] = state.messages[key].map((msg) => {
+            const isMe = msg.senderId.toLowerCase() === currentUserId.toLowerCase();
+            if (isMe) {
+              if (status === 'READ') {
+                return { ...msg, status: 'READ' };
+              }
+              if (status === 'DELIVERED' && msg.status !== 'READ') {
+                return { ...msg, status: 'DELIVERED' };
+              }
+            }
+            return msg;
+          });
+        }
+      });
+    },
+    updateSingleMessageStatus: (state, action) => {
+      const { conversationId, messageId, status, currentUserId } = action.payload;
+      if (!conversationId) return;
+
+      const conv = state.conversations.find((c) => c.conversationId === conversationId);
+      const keys = [conversationId];
+      if (conv) {
+        keys.push(conv.receiver.userId);
+      }
+
+      keys.forEach((key) => {
+        const messageList = state.messages[key];
+        if (messageList) {
+          let targetIndex = messageList.findIndex((msg) => String(msg.id) === String(messageId));
+
+          if (targetIndex === -1) {
+            targetIndex = messageList.findIndex((msg) => {
+              const isMe = msg.senderId.toLowerCase() === currentUserId.toLowerCase();
+              const isTempId = typeof msg.id === 'string' && isNaN(Number(msg.id));
+              return isMe && isTempId && msg.status !== 'READ' && msg.status !== 'DELIVERED';
+            });
+          }
+
+          if (targetIndex !== -1) {
+            const updatedMessages = [...messageList];
+            const msgToUpdate = updatedMessages[targetIndex];
+
+            updatedMessages[targetIndex] = {
+              ...msgToUpdate,
+              id: messageId,
+              status: status
+            };
+
+            state.messages[key] = updatedMessages;
+          }
+        }
+      });
+    },
     resetChatState: (state) => {
       state.conversations = [];
       state.selectedChatUserId = null;
       state.messages = {};
       state.unreadCounts = {};
       state.onlineUsers = [];
+      state.typingUsers = {};
       state.searchQuery = '';
       state.loadingConversations = false;
       state.loadingMessages = false;
@@ -256,6 +324,9 @@ export const {
   setLoadingMessages,
   updateConversationSummary,
   updateUserPresence,
+  setTypingStatus,
+  updateMessageStatus,
+  updateSingleMessageStatus,
   resetChatState
 } = chatSlice.actions;
 
@@ -265,6 +336,7 @@ export const selectSelectedChatUserId = (state) => state.chat.selectedChatUserId
 export const selectAllMessages = (state) => state.chat.messages;
 export const selectUnreadCounts = (state) => state.chat.unreadCounts;
 export const selectOnlineUsers = (state) => state.chat.onlineUsers;
+export const selectTypingUsers = (state) => state.chat.typingUsers;
 export const selectSearchQuery = (state) => state.chat.searchQuery;
 export const selectLoadingConversations = (state) => state.chat.loadingConversations;
 export const selectLoadingMessages = (state) => state.chat.loadingMessages;

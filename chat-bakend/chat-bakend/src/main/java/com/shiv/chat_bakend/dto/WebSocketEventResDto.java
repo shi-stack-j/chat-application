@@ -15,5 +15,4 @@ public class WebSocketEventResDto<T> {
     private WebSocketEventTypeEnum eventType;
     private T payload;
     private Timestamp timestamp;
-
 }

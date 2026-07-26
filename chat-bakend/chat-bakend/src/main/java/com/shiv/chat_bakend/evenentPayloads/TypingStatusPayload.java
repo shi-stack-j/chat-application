@@ -11,7 +11,7 @@ import lombok.*;
 public class TypingStatusPayload {
     private Long conversationId;
 
-    private String userId;
+    private String senderId;
 
     private boolean typing;
 }

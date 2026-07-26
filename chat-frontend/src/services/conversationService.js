@@ -1,31 +1,4 @@
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/chat-app/v1';
-
-/**
- * Handles HTTP response validation and parses body/errors.
- */
-const handleResponse = async (response) => {
-  if (!response.ok) {
-    const errText = await response.text();
-    let errMsg = 'API Request failed.';
-    try {
-      const errJson = JSON.parse(errText);
-      errMsg = errJson.message || errJson.errorMessage || errMsg;
-    } catch {
-      errMsg = errText || errMsg;
-    }
-    throw new Error(errMsg);
-  }
-
-  const contentType = response.headers.get('content-type');
-  if (contentType && contentType.includes('application/json')) {
-    const result = await response.json();
-    console.log("All conversations are  :- ", result);
-    return result;
-  }
-  const result = await response.text();
-  console.log("All conversations are  is :- ", result);
-  return result;
-};
+import apiClient from './apiClient';
 
 class ConversationService {
   /**
@@ -36,17 +9,9 @@ class ConversationService {
    * @param {string} currentUserId - ID of current user (sender)
    * @returns {Promise<Object>} ConversationDto
    */
-  createConversation = async (receiverId, currentUserId) => {
+  createConversation = async (receiverId) => {
     try {
-      const response = await fetch(`${API_BASE_URL}/conversation/create`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Sender-Id': currentUserId
-        },
-        body: JSON.stringify({ receiverId })
-      });
-      return await handleResponse(response);
+      return await apiClient.post('/conversation/create', { receiverId });
     } catch (error) {
       console.error('Create Conversation API Error:', error);
       throw error;
@@ -64,16 +29,9 @@ class ConversationService {
    */
   getConversations = async (currentUserId, page = 0, size = 20) => {
     try {
-      const response = await fetch(
-        `${API_BASE_URL}/conversation/get?page=${page}&size=${size}&sort=lastMessageAt,desc`,
-        {
-          method: 'GET',
-          headers: {
-            'X-Sender-Id': currentUserId
-          }
-        }
+      return await apiClient.get(
+        `/conversation/get?page=${page}&size=${size}&sort=lastMessageAt,desc`
       );
-      return await handleResponse(response);
     } catch (error) {
       console.error('Get Conversations API Error:', error);
       throw error;
@@ -91,16 +49,9 @@ class ConversationService {
    */
   getConversationSummaries = async (currentUserId, page = 0, size = 20) => {
     try {
-      const response = await fetch(
-        `${API_BASE_URL}/conversation/get/conversationSummary?page=${page}&size=${size}&sort=lastMessageAt,desc`,
-        {
-          method: 'GET',
-          headers: {
-            'X-User-Id': currentUserId
-          }
-        }
+      return await apiClient.get(
+        `/conversation/get/conversationSummary?page=${page}&size=${size}&sort=lastMessageAt,desc`
       );
-      return await handleResponse(response);
     } catch (error) {
       console.error('Get Conversation Summaries API Error:', error);
       throw error;

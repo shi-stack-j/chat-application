@@ -1,4 +1,3 @@
-import React from 'react';
 import { useSelector } from 'react-redux';
 import ChatHeader from './ChatHeader';
 import MessageList from './MessageList';
@@ -11,6 +10,7 @@ import {
   selectLoadingMessages
 } from '../features/chat/chatSlice';
 import { selectConnectionState } from '../features/websocket/websocketSlice';
+import useChat from '../hooks/useChat';
 
 /**
  * CHAT WINDOW PANEL COMPONENT
@@ -23,6 +23,7 @@ export const ChatWindow = ({ onSendMessage }) => {
   const activeMessages = useSelector(selectActiveMessages);
   const loadingMessages = useSelector(selectLoadingMessages);
   const connectionState = useSelector(selectConnectionState);
+  const { sendTypingStatus } = useChat();
 
   // If no chat partner is selected, render a modern greeting empty state
   if (!selectedChatUserId) {
@@ -42,10 +43,9 @@ export const ChatWindow = ({ onSendMessage }) => {
         <div className={`
           px-4 py-2 text-xs font-semibold select-none flex items-center gap-2 border-b
           transition-all duration-300
-          ${
-            connectionState === 'connecting'
-              ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20'
-              : 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20'
+          ${connectionState === 'connecting'
+            ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20'
+            : 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20'
           }
         `}>
           <span className={`w-1.5 h-1.5 rounded-full ${connectionState === 'connecting' ? 'bg-amber-500 animate-pulse' : 'bg-rose-500 animate-ping'}`} />
@@ -69,10 +69,11 @@ export const ChatWindow = ({ onSendMessage }) => {
       )}
 
       {/* Typing input bar */}
-      <MessageInput 
-        key={selectedChatUserId} 
-        onSendMessage={onSendMessage} 
-        chatUserId={selectedChatUserId} 
+      <MessageInput
+        key={selectedChatUserId}
+        onSendMessage={onSendMessage}
+        chatUserId={selectedChatUserId}
+        onTypingStatusChange={sendTypingStatus}
       />
     </div>
   );

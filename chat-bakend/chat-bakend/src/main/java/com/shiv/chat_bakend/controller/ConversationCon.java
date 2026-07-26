@@ -23,16 +23,14 @@ public class ConversationCon {
 //    This method will return the conversation if exists otherwise it create the new conversation
     @PostMapping("/create")
     public ResponseEntity<?> getOrCreateConversation(
-            @Valid @RequestBody ConversationReqDto reqDto,
-            @RequestHeader("X-Sender-Id") String senderId)
-    {
+            @Valid @RequestBody ConversationReqDto reqDto
+    ){
         if(reqDto==null )return ResponseEntity.badRequest().body("Conversation object is not valid");
-        return  conversationSer.getOrCreateConversation(senderId,reqDto);
+        return  conversationSer.getOrCreateConversation(reqDto);
     }
 //    This is used to return the conversations of the particular user
     @GetMapping("/get")
     public ResponseEntity<?> getUserConversations(
-            @RequestHeader("X-Sender-Id") String senderId,
             @PageableDefault(
                     page = 0,
                     size = 20,
@@ -40,13 +38,12 @@ public class ConversationCon {
                     direction = Sort.Direction.DESC
             )Pageable pageable
     ){
-        return conversationSer.getUserConversations(senderId,pageable);
+        return conversationSer.getUserConversations(pageable);
     }
 //    This method is used to handle request for the all conversation marked ro fetch user message
 //    Checked
     @GetMapping("/get/conversationSummary")
     public ResponseEntity<?> getConversationSummary(
-        @RequestHeader("X-User-Id") String UserId,
         @PageableDefault(
                 page = 0,
                 size = 20,
@@ -54,7 +51,7 @@ public class ConversationCon {
                 direction = Sort.Direction.DESC
         )Pageable pageable
     ){
-        return conversationSer.getConversationSummary(UserId,pageable);
+        return conversationSer.getConversationSummary(pageable);
     }
 
 }

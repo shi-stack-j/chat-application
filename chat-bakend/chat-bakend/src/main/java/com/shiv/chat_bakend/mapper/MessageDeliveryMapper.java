@@ -6,10 +6,10 @@ import com.shiv.chat_bakend.model.MessageDeliveryEn;
 import com.shiv.chat_bakend.model.MessageEn;
 
 public class MessageDeliveryMapper {
-    public static MessageDeliveryEn toMessageDeliveryEn(MessageEn messageEn){
+    public static MessageDeliveryEn toMessageDeliveryEn(MessageEn messageEn,MessageStatusEnum statusEnum){
         MessageDeliveryEn messageDeliveryEn=new MessageDeliveryEn();
         messageDeliveryEn.setMessage(messageEn);
-        messageDeliveryEn.setStatus(MessageStatusEnum.SENT);
+        messageDeliveryEn.setStatus(statusEnum);
         messageDeliveryEn.setUser(messageEn.getReceiver());
         return messageDeliveryEn;
     }

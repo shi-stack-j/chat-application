@@ -40,4 +40,33 @@ public interface ConversationRepo extends JpaRepository<ConversationEn , Long> {
     """)
     List<ConversationEn> findAllConversations(@Param("user") String user);
 
+    @Query("""
+            SELECT COUNT(c) > 0
+            FROM ConversationEn c
+            WHERE c.id = :conversationId
+            AND (
+                c.userOne.userId = :userId
+                OR
+                c.userTwo.userId = :userId
+            )
+    """)
+    boolean existsConversationForUser(
+            @Param("conversationId") Long conversationId,
+            @Param("userId") String userId
+    );
+
+    @Query("""
+            SELECT CASE
+                WHEN c.userOne.userId = :senderId
+                THEN c.userTwo.userId
+                ELSE c.userOne.userId
+            END
+            FROM ConversationEn c
+            WHERE c.id = :conversationId
+    """)
+    Optional<String> findReceiver(
+            @Param("conversationId") Long conversationId,
+            @Param("senderId") String senderId
+    );
+
 }

@@ -1,6 +1,7 @@
 package com.shiv.chat_bakend.dto.user;
 
 
+import com.shiv.chat_bakend.enums.RoleEnum;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -16,4 +17,5 @@ public class UserResDto {
     private String nickName;
     private String avatarUrl;
     private boolean isOnline;
+    private RoleEnum roleEnum;
 }

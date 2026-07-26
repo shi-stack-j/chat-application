@@ -11,6 +11,7 @@ public class UserMapper {
         resDto.setAvatarUrl(userEn.getAvatarUrl());
         resDto.setNickName(userEn.getNickName());
         resDto.setOnline(isOnline);
+        resDto.setRoleEnum(userEn.getRole());
         return resDto;
     }
 }

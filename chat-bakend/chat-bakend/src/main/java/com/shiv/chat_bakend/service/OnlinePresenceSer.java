@@ -28,14 +28,12 @@ public class OnlinePresenceSer {
     private OnlineRepo onlineRepo;
     @Autowired
     private ConversationRepo conversationRepo;
-
     public ResponseEntity<?> getLastSeen(String userId){
         if(userId==null || userId.isBlank())return ResponseEntity.badRequest().body("UserId is not valid");
         UserEn userEn=userRep.findByUserId(userId).orElseThrow();
         OnlinePresenceEn onlinePresenceEn=onlinePresenceRepo.findByUser_id(userId).orElseThrow();
         return ResponseEntity.ok(OnlinePresenceMapper.toOnlinePresenceResDto(onlinePresenceEn));
     }
-
     @Transactional
     public ResponseEntity<?> setLastFalse(String userId){
         if(userId==null || userId.isBlank())return ResponseEntity.badRequest().body("UserId is not valid");
@@ -46,19 +44,16 @@ public class OnlinePresenceSer {
     }
 
     public boolean isOnline(String userId){
+
         if(userId==null || userId.isBlank() || userId.length()<3)throw new RuntimeException("User id is not valid");
         return onlineRepo.isOnline(userId);
     }
 
-    public boolean saveOnlineUser(String userId,String sessionId){
+    public boolean saveOnlineUser(String sessionId,String userId){
         if(userId==null || userId.isBlank())throw new RuntimeException("User id information is not valid");
         if(sessionId==null || sessionId.isBlank())throw new RuntimeException("Session is not valid");
         boolean userExists= userRep.existsByUserIdAndDeletedFalseAndIsActiveTrue(userId);
         if(!userExists)throw new RuntimeException("User not found");
-        boolean isExists=isOnline(userId);
-        if(isExists)throw new RuntimeException("User already present in online users");
-        boolean isSessionMapped=onlineRepo.isSessionMapped(sessionId);
-        if(isSessionMapped)throw new RuntimeException("Session id already mapped");
         OnlineUserSession onlineUserSession=new OnlineUserSession();
         onlineUserSession.setUserId(userId);
         onlineUserSession.setSessionId(sessionId);
@@ -67,21 +62,13 @@ public class OnlinePresenceSer {
     }
 
     public void removeOnlineUser(String userId){
-        if(userId==null || userId.isBlank())throw new RuntimeException("User id information is not valid");
+        if(userId==null || userId.isBlank()) return;
         boolean userExists= userRep.existsByUserIdAndDeletedFalseAndIsActiveTrue(userId);
-        if(!userExists)throw new RuntimeException("USer not found");
+        if(!userExists) return;
         boolean isExists=isOnline(userId);
-        if(!isExists)throw new RuntimeException("User not present in online users");
-        onlineRepo.removeOnlineUser(userId);
+        if(isExists) {
+            onlineRepo.removeOnlineUser(userId);
+        }
     }
 
-    public boolean isSession(String sessionId){
-        if(sessionId==null || sessionId.isBlank())return false;
-        return onlineRepo.existsSession(sessionId);
-    }
-
-    public String getUserId(String sessionId){
-        if(sessionId==null || sessionId.isBlank())throw new RuntimeException("Session id is not valid");
-        return onlineRepo.getUserId(sessionId);
-    }
 }

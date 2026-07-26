@@ -12,6 +12,8 @@ import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.security.Principal;
+
 @RestController
 @RequestMapping("/messages")
 //Description :- This controller is used to manage the request regarding the message related services
@@ -20,27 +22,25 @@ public class MessageCon {
     private MessageSer messageSer;
     @Autowired
     private MessageDeliverySer messageDeliverySer;
-    @Autowired
-    private ChatCon chatCon;
+
 
 //    Checked
 //    This method will return the counts of all the unread messages
     @GetMapping("/get/unreadCounts")
     public ResponseEntity<?> getUnreadCounts(
-            @RequestHeader("X-UserId")String userId
+
     ){
-        if(userId==null || userId.isBlank() || userId.length()<3)return ResponseEntity.badRequest().body("UserId is not valid");
-        return messageDeliverySer.getUnreadCountsOfUser(userId);
+        return messageDeliverySer.getUnreadCountsOfUser();
     }
 //    This method is used to mark the message as read
 //    Checked
     @PostMapping("/mark/read")
     public ResponseEntity<?> markAsRead(
-            @Valid @RequestBody MarkReadReqDto markReadReqDto,
-            @RequestHeader("X-User-Id")String userId
+            @Valid @RequestBody MarkReadReqDto markReadReqDto
     ){
+        System.out.println("calling thr mark read controller....");
         if(markReadReqDto==null)return ResponseEntity.badRequest().body("Request object is not valid");
-        return messageDeliverySer.markAsRead(markReadReqDto,userId);
+        return messageDeliverySer.markAsRead(markReadReqDto);
     }
 //    This method is used fetch the last messages of the conversations
 //    Checked
@@ -61,19 +61,19 @@ public class MessageCon {
     @PostMapping("/send/message/")
     public ResponseEntity<?> sendMessage(
             @RequestHeader("X-Conversation-Id")Long conversationId,
-            @Valid @RequestBody MessageReqDto messageReqDto,
-            @RequestHeader("X-Sender-Id")String senderId
+            @Valid @RequestBody MessageReqDto messageReqDto
     ){
         if(conversationId==null || conversationId<=0)return ResponseEntity.badRequest().body("Conversation id is not valid");
-        messageSer.sendMessage(messageReqDto,senderId);
+        messageSer.sendMessage(messageReqDto,"");
         return ResponseEntity.ok("Message Sent successfully");
     }
 
 //    Checked
     @PostMapping("/mark/delivered")
     public ResponseEntity<?> markAsDelivered(
-            @RequestHeader("X-User-Id")String userId
+            Principal principal
     ){
+        String userId=principal.getName();
         if(userId==null || userId.isBlank() || userId.length()<3)return ResponseEntity.badRequest().body("UserId is not valid");
         return messageDeliverySer.markAsDelivered(userId);
     }

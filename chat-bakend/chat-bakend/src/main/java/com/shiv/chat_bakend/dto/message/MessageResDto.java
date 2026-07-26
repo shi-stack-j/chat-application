@@ -1,10 +1,7 @@
 package com.shiv.chat_bakend.dto.message;
 
 
-import lombok.AllArgsConstructor;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
+import lombok.*;
 
 import java.time.LocalDateTime;
 
@@ -12,6 +9,7 @@ import java.time.LocalDateTime;
 @Setter
 @AllArgsConstructor
 @NoArgsConstructor
+@ToString
 //Description :- This is used to return the message response to the frontend
 public class MessageResDto {
     private Long conversationId;

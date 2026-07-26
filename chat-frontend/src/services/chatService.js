@@ -12,6 +12,7 @@ class ChatService {
   activeSubscriptions = {};
 
   connect(token, onConnect, onDisconnect) {
+    console.log('Attempting to connect with token:', token);
     if (this.client && (this.client.active || this.client.connected)) {
       console.log('STOMP client already active or connected.');
       return;
@@ -22,7 +23,7 @@ class ChatService {
       reconnectDelay: 5000,
 
       connectHeaders: {
-        token: token
+        Authorization: 'Bearer ' + token
       },
 
       onConnect: () => {
@@ -41,7 +42,7 @@ class ChatService {
         console.error('STOMP Error:', frame.body);
       }
     });
-
+    console.log('Activating STOMP client...');
     this.client.activate();
   }
 
@@ -87,6 +88,42 @@ class ChatService {
     const subscription = this.client.subscribe(destination, onMessageReceived);
     this.activeSubscriptions[destination] = subscription;
     return subscription;
+  }
+
+  sendTypingStatus(conversationId, isTyping) {
+    if (!this.client || !this.client.connected) return;
+    console.log("SENDING TYPING STATUS FOR CONVERSATION:", conversationId, "Typing:", isTyping);
+    this.client.publish({
+      destination: '/app/chat.typingAck',
+      body: JSON.stringify({
+        conversationId,
+        isTyping: isTyping
+      })
+    });
+  }
+
+  sendReadAck(conversationId) {
+  
+    if (!this.client || !this.client.connected) return;
+    console.log("SENDING READ ACK FOR CONVERSATION:", conversationId);
+    console.log('Sending read ack for conversation:', conversationId);
+    this.client.publish({
+      destination: '/app/chat.readAck',
+      body: JSON.stringify({
+        conversationId
+      })
+    });
+  }
+
+  sendDeliveryAck(messageId) {
+    if (!this.client || !this.client.connected) return;
+    console.log("SENDING DELIVERY ACK FOR MESSAGE:", messageId);
+    this.client.publish({
+      destination: '/app/chat.deliveryAck',
+      body: JSON.stringify({
+        messageId: Number(messageId)
+      })
+    });
   }
 
   disconnect() {

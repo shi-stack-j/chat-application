@@ -4,6 +4,7 @@ import { ChatContext } from './ChatContextInstance';
 import conversationService from '../services/conversationService';
 import messageService from '../services/messageService';
 import userService from '../services/userService';
+import chatService from '../services/chatService';
 import {
   setConversations,
   setMessages,
@@ -18,7 +19,8 @@ import {
   selectConversations,
   selectAllMessages,
   selectLoadingConversations,
-  selectLoadingMessages
+  selectLoadingMessages,
+  selectSelectedChatUserId
 } from '../features/chat/chatSlice';
 
 /**
@@ -35,9 +37,12 @@ export const ChatProvider = ({ children }) => {
   const conversations = useSelector(selectAllMessages);
   const loadingConversations = useSelector(selectLoadingConversations);
   const loadingMessages = useSelector(selectLoadingMessages);
+  const selectedChatUserId = useSelector(selectSelectedChatUserId);
 
   const loadingConversationsRef = useRef(loadingConversations);
   const loadingMessagesRef = useRef(loadingMessages);
+  const selectedChatUserIdRef = useRef(selectedChatUserId);
+  const conversationListRef = useRef(conversationList);
 
   useEffect(() => {
     loadingConversationsRef.current = loadingConversations;
@@ -46,6 +51,11 @@ export const ChatProvider = ({ children }) => {
   useEffect(() => {
     loadingMessagesRef.current = loadingMessages;
   }, [loadingMessages]);
+
+  useEffect(() => {
+    selectedChatUserIdRef.current = selectedChatUserId;
+    conversationListRef.current = conversationList;
+  }, [selectedChatUserId, conversationList]);
 
   // Fetch conversation summaries from backend
   const fetchConversations = useCallback(async (currentUserId) => {
@@ -127,6 +137,7 @@ export const ChatProvider = ({ children }) => {
       await messageService.markAsDelivered(currentUserId);
       await messageService.markAsRead(conversationId, currentUserId);
       dispatch(resetUnread(chatUserId));
+      chatService.sendReadAck(conversationId);
     } catch (error) {
       console.error('Mark read error:', error);
     }
@@ -215,6 +226,18 @@ export const ChatProvider = ({ children }) => {
     dispatch(removeConversationAction(chatUserId));
   }, [dispatch]);
 
+  // Sends local typing status to the backend via WebSocket
+  const sendTypingStatus = useCallback((isTyping) => {
+    const activeUserId = selectedChatUserIdRef.current;
+    if (!activeUserId) return;
+    const conv = conversationListRef.current.find(
+      (c) => c.receiver.userId.toLowerCase() === activeUserId.toLowerCase()
+    );
+    if (conv && conv.conversationId) {
+      chatService.sendTypingStatus(conv.conversationId, isTyping);
+    }
+  }, []);
+
   const contextValue = useMemo(() => ({
     conversationList,
     conversations,
@@ -227,7 +250,8 @@ export const ChatProvider = ({ children }) => {
     addMessage,
     updateConversationSummary,
     clearConversation,
-    removeConversation
+    removeConversation,
+    sendTypingStatus
   }), [
     conversationList,
     conversations,
@@ -240,7 +264,8 @@ export const ChatProvider = ({ children }) => {
     addMessage,
     updateConversationSummary,
     clearConversation,
-    removeConversation
+    removeConversation,
+    sendTypingStatus
   ]);
 
   return (

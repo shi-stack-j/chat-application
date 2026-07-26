@@ -1,27 +1,4 @@
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/chat-app/v1';
-
-/**
- * Handles HTTP response validation and parses body/errors.
- */
-const handleResponse = async (response) => {
-  if (!response.ok) {
-    const errText = await response.text();
-    let errMsg = 'API Request failed.';
-    try {
-      const errJson = JSON.parse(errText);
-      errMsg = errJson.message || errJson.errorMessage || errMsg;
-    } catch {
-      errMsg = errText || errMsg;
-    }
-    throw new Error(errMsg);
-  }
-
-  const contentType = response.headers.get('content-type');
-  if (contentType && contentType.includes('application/json')) {
-    return await response.json();
-  }
-  return await response.text();
-};
+import apiClient from './apiClient';
 
 class UserService {
   /**
@@ -33,10 +10,26 @@ class UserService {
    */
   getUser = async (userId) => {
     try {
-      const response = await fetch(`${API_BASE_URL}/user/get/${userId}`, { method: 'GET' });
-      return await handleResponse(response);
+      return await apiClient.get(`/user/get/${userId}`);
     } catch (error) {
       console.error(`Get User API Error for ${userId}:`, error);
+      throw error;
+    }
+  };
+
+  /**
+   * Fetches the current logged in user's profile details using a JWT token.
+   * GET /user/current/user
+   * 
+   * @param {string} token - Optional token (passed to override if needed)
+   * @returns {Promise<Object>} UserResDto - { userId, nickName, avatarUrl, isOnline }
+   */
+  getCurrentUser = async (token) => {
+    try {
+      const options = token ? { headers: { 'Authorization': `Bearer ${token}` } } : {};
+      return await apiClient.get('/user/current/user', options);
+    } catch (error) {
+      console.error('Get Current User API Error:', error);
       throw error;
     }
   };
@@ -55,7 +48,7 @@ class UserService {
    * @param {string} currentUserId 
    * @returns {Promise<Object>} Standardized connection info wrapper
    */
-  connectUser = async (targetId, currentUserId) => {
+  connectUser = async (targetId) => {
     try {
       const data = await this.getUser(targetId);
       return {
