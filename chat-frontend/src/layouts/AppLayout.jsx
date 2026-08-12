@@ -35,7 +35,7 @@ export const AppLayout = ({ sidebar, children }) => {
         <aside
           className={`
             fixed md:static inset-y-0 left-0 z-30
-            w-full sm:w-80 md:w-96 h-full
+            w-full md:w-96 h-full
             flex flex-col
             bg-white dark:bg-slate-900 
             border-r border-slate-200 dark:border-slate-800

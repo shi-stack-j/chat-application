@@ -1,7 +1,7 @@
-import { useSelector, useDispatch } from 'react-redux';
-import { selectOnlineUsers, clearSelectedChat, selectConversations, selectTypingUsers } from '../features/chat/chatSlice';
+import { selectOnlineUsers, clearSelectedChat, selectConversations, selectTypingUsers, selectBlockedUsers } from '../features/chat/chatSlice';
 import { selectConnectionState } from '../features/websocket/websocketSlice';
 import { setSidebarOpen } from '../features/ui/uiSlice';
+import { useDispatch, useSelector } from 'react-redux';
 import UserAvatar from './UserAvatar';
 import useChat from '../hooks/useChat';
 import toastHelper from '../utils/toastHelper';
@@ -12,7 +12,7 @@ import toastHelper from '../utils/toastHelper';
  * Why this component exists:
  * - Represents the action bar at the top of the active chat thread.
  * - Displays the identity of the current chat partner and their online presence.
- * - Houses controls to toggle the sidebar on mobile devices and clear/delete history.
+ * - Houses controls to toggle the sidebar on mobile devices, clear/delete history, and block/unblock users.
  */
 export const ChatHeader = ({ chatUserId }) => {
   const dispatch = useDispatch();
@@ -20,14 +20,19 @@ export const ChatHeader = ({ chatUserId }) => {
   const conversations = useSelector(selectConversations);
   const connectionState = useSelector(selectConnectionState);
   const typingUsers = useSelector(selectTypingUsers) || {};
-  const { clearConversation, removeConversation } = useChat();
-
+  const blockedUsers = useSelector(selectBlockedUsers) || [];
   const activeSummary = conversations.find(
     (c) => c.receiver.userId.toLowerCase() === chatUserId.toLowerCase()
   );
+  const isBlocked = blockedUsers.some(id => id.toLowerCase() === chatUserId.toLowerCase()) ||
+    !!(activeSummary?.isOtherUserBlocked || activeSummary?.otherUserBlocked);
 
-  const isOnline = onlineUsers.some(id => id.toLowerCase() === chatUserId.toLowerCase()) ||
-    (activeSummary && (activeSummary.receiver.isOnline || activeSummary.receiver.online));
+  const { clearConversation, removeConversation, blockUser, unblockUser } = useChat();
+
+  const isOnline = !isBlocked && (
+    onlineUsers.some(id => id.toLowerCase() === chatUserId.toLowerCase()) ||
+    (activeSummary && (activeSummary.receiver.isOnline || activeSummary.receiver.online))
+  );
 
   const isTyping = typingUsers[chatUserId.toLowerCase()];
 
@@ -46,6 +51,26 @@ export const ChatHeader = ({ chatUserId }) => {
     }
   };
 
+  const handleToggleBlock = async () => {
+    if (isBlocked) {
+      try {
+        await unblockUser(chatUserId);
+        toastHelper.success(`Unblocked ${chatUserId}`);
+      } catch (err) {
+        toastHelper.error(err.message || `Failed to unblock ${chatUserId}`);
+      }
+    } else {
+      if (window.confirm(`Are you sure you want to block ${chatUserId}? You will no longer receive messages from this user.`)) {
+        try {
+          await blockUser(chatUserId);
+          toastHelper.success(`Blocked ${chatUserId}`);
+        } catch (err) {
+          toastHelper.error(err.message || `Failed to block ${chatUserId}`);
+        }
+      }
+    }
+  };
+
   return (
     <header className="
       h-16 shrink-0 flex items-center justify-between px-4
@@ -57,14 +82,18 @@ export const ChatHeader = ({ chatUserId }) => {
       {/* User info left side */}
       <div className="flex items-center gap-3 min-w-0">
 
-        {/* Mobile menu toggle button */}
+        {/* Mobile Back button to return to conversation list */}
         <button
-          onClick={() => dispatch(setSidebarOpen(true))}
-          className="p-2 -ml-2 rounded-lg md:hidden text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
-          aria-label="Open sidebar"
+          onClick={() => {
+            dispatch(clearSelectedChat());
+            dispatch(setSidebarOpen(true));
+          }}
+          className="p-2 -ml-2 rounded-xl md:hidden text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer transition-colors"
+          aria-label="Back to conversations"
+          title="Back to conversations"
         >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 19l-7-7 7-7" />
           </svg>
         </button>
 
@@ -125,6 +154,21 @@ export const ChatHeader = ({ chatUserId }) => {
         >
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+
+        {/* Block / Unblock User */}
+        <button
+          onClick={handleToggleBlock}
+          className={`p-2 rounded-xl transition-all cursor-pointer ${
+            isBlocked
+              ? 'text-red-500 bg-red-50 dark:bg-red-950/40 hover:bg-red-100 dark:hover:bg-red-900/40'
+              : 'text-slate-400 hover:text-red-500 hover:bg-slate-50 dark:hover:bg-slate-800/60'
+          }`}
+          title={isBlocked ? `Unblock ${chatUserId}` : `Block ${chatUserId}`}
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
           </svg>
         </button>
 

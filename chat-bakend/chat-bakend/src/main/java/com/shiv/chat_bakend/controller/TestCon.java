@@ -16,7 +16,7 @@ public class TestCon {
 
     @GetMapping("/count")
     public ResponseEntity<?> getCount(@RequestParam("cId") Long cId,@RequestParam("uId")String uId){
-        long count=messageDeliveryRepo.countUnreadMessagesByConversation(uId,cId);
+        long count=messageDeliveryRepo.countUnreadMessagesByConversation(uId,cId,null);
         return ResponseEntity.ok(count);
 
     }

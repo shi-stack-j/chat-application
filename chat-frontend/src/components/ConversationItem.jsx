@@ -49,11 +49,11 @@ export const ConversationItem = memo(({
       onClick={handleSelect}
       className={`
         w-full p-3.5 flex items-center gap-3.5 
-        text-left select-none border-b border-slate-100/50 dark:border-slate-800/30
-        transition-all duration-200 cursor-pointer
+        text-left select-none border-b border-slate-100 dark:border-slate-800/40
+        transition-all duration-200 cursor-pointer relative
         ${isSelected
-          ? 'bg-slate-100 dark:bg-slate-800/80'
-          : 'hover:bg-slate-50 dark:hover:bg-slate-800/40 bg-transparent'
+          ? 'bg-indigo-50/80 dark:bg-indigo-950/40 border-l-4 border-l-indigo-600 dark:border-l-indigo-500'
+          : 'hover:bg-slate-50 dark:hover:bg-slate-800/40 bg-transparent border-l-4 border-l-transparent'
         }
       `}
     >

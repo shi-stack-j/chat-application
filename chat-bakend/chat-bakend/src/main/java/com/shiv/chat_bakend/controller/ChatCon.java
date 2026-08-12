@@ -24,7 +24,7 @@ public class ChatCon {
 
 //    This will manage the message that is received to the backend and will process further
     @MessageMapping("/chat")
-    public void handleChat(MessageReqDto messageReqDto, Principal principal){
+    public void handleChat(@Valid MessageReqDto messageReqDto, Principal principal){
         System.out.println("Message received on chat controller......");
         chatSer.handleMessage(messageReqDto,principal.getName());
     }

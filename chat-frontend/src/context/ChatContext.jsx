@@ -7,6 +7,7 @@ import userService from '../services/userService';
 import chatService from '../services/chatService';
 import {
   setConversations,
+  setTotalUnreadCount,
   setMessages,
   addMessage as addMessageAction,
   clearConversation as clearConversationAction,
@@ -15,7 +16,15 @@ import {
   addOnlineUser,
   setLoadingConversations,
   setLoadingMessages,
+  setPaginationInfo,
+  setLoadingOlderMessages,
+  prependMessages,
   updateConversationSummary as updateConversationSummaryAction,
+  updateEditedMessage,
+  updateDeletedMessage,
+  deleteMessagesForMe,
+  addBlockedUser,
+  removeBlockedUser,
   selectConversations,
   selectAllMessages,
   selectLoadingConversations,
@@ -38,11 +47,13 @@ export const ChatProvider = ({ children }) => {
   const loadingConversations = useSelector(selectLoadingConversations);
   const loadingMessages = useSelector(selectLoadingMessages);
   const selectedChatUserId = useSelector(selectSelectedChatUserId);
+  const pagination = useSelector((state) => state.chat.pagination || {});
 
   const loadingConversationsRef = useRef(loadingConversations);
   const loadingMessagesRef = useRef(loadingMessages);
   const selectedChatUserIdRef = useRef(selectedChatUserId);
   const conversationListRef = useRef(conversationList);
+  const paginationRef = useRef(pagination);
 
   useEffect(() => {
     loadingConversationsRef.current = loadingConversations;
@@ -55,7 +66,8 @@ export const ChatProvider = ({ children }) => {
   useEffect(() => {
     selectedChatUserIdRef.current = selectedChatUserId;
     conversationListRef.current = conversationList;
-  }, [selectedChatUserId, conversationList]);
+    paginationRef.current = pagination;
+  }, [selectedChatUserId, conversationList, pagination]);
 
   // Fetch conversation summaries from backend
   const fetchConversations = useCallback(async (currentUserId) => {
@@ -73,29 +85,47 @@ export const ChatProvider = ({ children }) => {
         return new Date(b.lastMessageTime).getTime() - new Date(a.lastMessageTime).getTime();
       });
 
-      // Normalize `online` status field to `isOnline` from backend response
+      // Normalize fields & extract block status from backend ConversationSummaryResDto response
       const normalizedContent = sortedContent.map((c) => {
+        const isBlocked = !!(c.isOtherUserBlocked || c.otherUserBlocked);
+        if (isBlocked && c.receiver?.userId) {
+          dispatch(addBlockedUser(c.receiver.userId));
+        }
         if (c.receiver) {
-          const isOnline = c.receiver.isOnline !== undefined ? c.receiver.isOnline : c.receiver.online;
+          const isOnline = (c.receiver.isOnline !== undefined ? c.receiver.isOnline : c.receiver.online) && !isBlocked;
           return {
             ...c,
+            isOtherUserBlocked: isBlocked,
+            otherUserBlocked: isBlocked,
             receiver: {
               ...c.receiver,
               isOnline: !!isOnline
             }
           };
         }
-        return c;
+        return {
+          ...c,
+          isOtherUserBlocked: isBlocked,
+          otherUserBlocked: isBlocked
+        };
       });
 
       dispatch(setConversations(normalizedContent));
 
-      // Dispatch online status of peers to Redux onlineUsers list
+      // Dispatch online status of non-blocked peers to Redux onlineUsers list
       normalizedContent.forEach((c) => {
-        if (c.receiver?.isOnline) {
+        if (c.receiver?.isOnline && !(c.isOtherUserBlocked || c.otherUserBlocked)) {
           dispatch(addOnlineUser(c.receiver.userId));
         }
       });
+
+      // Synchronize total unread message counts from backend into Redux store
+      try {
+        const unreadCount = await messageService.getUnreadCounts();
+        dispatch(setTotalUnreadCount(unreadCount));
+      } catch (unreadErr) {
+        console.error('Failed to sync unread counts:', unreadErr);
+      }
     } catch (error) {
       console.error('Fetch conversations error:', error);
     } finally {
@@ -112,21 +142,111 @@ export const ChatProvider = ({ children }) => {
       const messagesList = response.content || [];
 
       // Backend returns newest first. Reverse to display oldest first (chronological).
-      const reversed = [...messagesList].reverse().map((msg, index) => ({
-        id: msg.id || `${msg.senderId || msg.sender?.userId || 'sender'}-${msg.receivedAt || msg.sentAt || msg.createdAt || 'timestamp'}-${index}`,
-        senderId: msg.sender?.userId || msg.senderId,
-        receiverId: msg.receiver?.userId || msg.receiverId,
-        content: msg.content,
-        timestamp: msg.receivedAt || msg.sentAt || msg.createdAt || new Date().toISOString()
-      }));
+      const reversed = [...messagesList].reverse().map((msg, index) => {
+        const realId = msg.messageId || msg.id;
+        const msgSenderId = msg.sender?.userId || msg.senderId;
+        const msgReceiverId = msg.receiver?.userId || msg.receiverId;
+        return {
+          id: realId || `${msgSenderId || 'sender'}-${msg.receivedAt || msg.sentAt || msg.createdAt || 'timestamp'}-${index}`,
+          messageId: realId || null,
+          conversationId: msg.conversationId || conversationId,
+          senderId: msgSenderId,
+          receiverId: msgReceiverId,
+          content: msg.content,
+          timestamp: msg.receivedAt || msg.sentAt || msg.createdAt || new Date().toISOString(),
+          isEdited: !!(msg.isEdited || msg.edited),
+          editedAt: msg.editedAt || null,
+          deletedFromEveryOne: !!(msg.deletedFromEveryOne || msg.isDeletedForEveryone),
+          status: msg.status || null
+        };
+      });
 
       // Cache under both conversationId (per layout instructions) and chatUserId (for hook lookup compatibility)
       dispatch(setMessages({ key: conversationId, messages: reversed }));
       dispatch(setMessages({ key: chatUserId, messages: reversed }));
+
+      const isLastPage = response.last !== undefined ? response.last : (messagesList.length < 20);
+      const paginationData = { page: 0, hasMore: !isLastPage, loadingOlder: false };
+      dispatch(setPaginationInfo({ key: conversationId, ...paginationData }));
+      dispatch(setPaginationInfo({ key: chatUserId, ...paginationData }));
     } catch (error) {
       console.error('Fetch messages error:', error);
     } finally {
       dispatch(setLoadingMessages(false));
+    }
+  }, [dispatch]);
+
+  // Fetch older historical messages for infinite upward scroll pagination
+  const fetchOlderMessages = useCallback(async (chatUserId, conversationId) => {
+    const targetChatUserId = chatUserId || selectedChatUserIdRef.current;
+    if (!targetChatUserId) return { count: 0 };
+
+    let targetConvId = conversationId;
+    if (!targetConvId) {
+      const conv = conversationListRef.current.find(
+        (c) => c.receiver.userId.toLowerCase() === targetChatUserId.toLowerCase()
+      );
+      targetConvId = conv?.conversationId || targetChatUserId;
+    }
+
+    if (!targetConvId) return { count: 0 };
+
+    // Retrieve latest pagination state from store / ref
+    const currentPagination = paginationRef.current[targetConvId] || paginationRef.current[targetChatUserId] || { page: 0, hasMore: true, loadingOlder: false };
+
+    if (!currentPagination.hasMore || currentPagination.loadingOlder) {
+      return { count: 0 };
+    }
+
+    const nextPage = (currentPagination.page || 0) + 1;
+
+    dispatch(setLoadingOlderMessages({ conversationId: targetConvId, chatUserId: targetChatUserId, loading: true }));
+
+    try {
+      const response = await messageService.getLatestMessages(targetConvId, nextPage, 20);
+      const messagesList = response.content || [];
+      const isLastPage = response.last !== undefined ? response.last : (messagesList.length < 20);
+
+      // Verify active chat selection hasn't changed during network request
+      if (selectedChatUserIdRef.current && selectedChatUserIdRef.current.toLowerCase() !== targetChatUserId.toLowerCase()) {
+        console.log('Discarding older messages response for inactive chat:', targetChatUserId);
+        dispatch(setLoadingOlderMessages({ conversationId: targetConvId, chatUserId: targetChatUserId, loading: false }));
+        return { count: 0 };
+      }
+
+      // Reverse to chronological order (oldest first)
+      const reversed = [...messagesList].reverse().map((msg, index) => {
+        const realId = msg.messageId || msg.id;
+        const msgSenderId = msg.sender?.userId || msg.senderId;
+        const msgReceiverId = msg.receiver?.userId || msg.receiverId;
+        return {
+          id: realId || `${msgSenderId || 'sender'}-${msg.receivedAt || msg.sentAt || msg.createdAt || 'timestamp'}-${index}`,
+          messageId: realId || null,
+          conversationId: msg.conversationId || targetConvId,
+          senderId: msgSenderId,
+          receiverId: msgReceiverId,
+          content: msg.content,
+          timestamp: msg.receivedAt || msg.sentAt || msg.createdAt || new Date().toISOString(),
+          isEdited: !!(msg.isEdited || msg.edited),
+          editedAt: msg.editedAt || null,
+          deletedFromEveryOne: !!(msg.deletedFromEveryOne || msg.isDeletedForEveryone),
+          status: msg.status || null
+        };
+      });
+
+      dispatch(prependMessages({
+        conversationId: targetConvId,
+        chatUserId: targetChatUserId,
+        messages: reversed,
+        page: nextPage,
+        hasMore: !isLastPage
+      }));
+
+      return { count: reversed.length, hasMore: !isLastPage };
+    } catch (error) {
+      console.error('Fetch older messages error:', error);
+      dispatch(setLoadingOlderMessages({ conversationId: targetConvId, chatUserId: targetChatUserId, loading: false }));
+      return { count: 0, error };
     }
   }, [dispatch]);
 
@@ -216,8 +336,19 @@ export const ChatProvider = ({ children }) => {
     dispatch(updateConversationSummaryAction({ chatUserId, content, timestamp, incrementUnread, conversationId }));
   }, [dispatch]);
 
-  // Clear conversation locally (resolves ChatHeader.jsx runtime crash)
-  const clearConversation = useCallback((chatUserId) => {
+  // Clear conversation history via backend REST call and local state reset
+  const clearConversation = useCallback(async (chatUserId) => {
+    if (!chatUserId) return;
+    const conv = conversationListRef.current.find(
+      (c) => c.receiver.userId.toLowerCase() === chatUserId.toLowerCase()
+    );
+    if (conv && conv.conversationId) {
+      try {
+        await conversationService.clearConversation(conv.conversationId);
+      } catch (error) {
+        console.error('Failed to clear conversation on backend:', error);
+      }
+    }
     dispatch(clearConversationAction(chatUserId));
   }, [dispatch]);
 
@@ -225,6 +356,73 @@ export const ChatProvider = ({ children }) => {
   const removeConversation = useCallback((chatUserId) => {
     dispatch(removeConversationAction(chatUserId));
   }, [dispatch]);
+
+  // Edits message via backend REST API and dispatches Redux update
+  const editMessage = useCallback(async (conversationId, messageId, newContent) => {
+    try {
+      await messageService.editMessage(messageId, newContent);
+      dispatch(updateEditedMessage({ conversationId, messageId, content: newContent }));
+    } catch (error) {
+      console.error('Edit message error:', error);
+      throw error;
+    }
+  }, [dispatch]);
+
+  // Deletes message for everyone via backend REST API and dispatches Redux update
+  const deleteForEveryone = useCallback(async (conversationId, messageId) => {
+    try {
+      await messageService.deleteForEveryone(messageId);
+      dispatch(updateDeletedMessage({ conversationId, messageId }));
+    } catch (error) {
+      console.error('Delete for everyone error:', error);
+      throw error;
+    }
+  }, [dispatch]);
+
+  // Deletes message for me via backend REST API and dispatches Redux update
+  const deleteForMe = useCallback(async (conversationId, messageId, chatUserId) => {
+    try {
+      await messageService.deleteForMe([messageId]);
+      dispatch(deleteMessagesForMe({ conversationId, messageIds: [messageId], chatUserId }));
+    } catch (error) {
+      console.error('Delete for me error:', error);
+      throw error;
+    }
+  }, [dispatch]);
+
+  // Blocks user via backend REST API and dispatches Redux update
+  const blockUser = useCallback(async (blockedUserId) => {
+    if (!blockedUserId) return;
+    try {
+      await userService.blockUser(blockedUserId);
+      dispatch(addBlockedUser(blockedUserId));
+    } catch (error) {
+      console.error('Block user error:', error);
+      throw error;
+    }
+  }, [dispatch]);
+
+  // Unblocks user via backend REST API and dispatches Redux update
+  const unblockUser = useCallback(async (blockedUserId) => {
+    if (!blockedUserId) return;
+    try {
+      await userService.unblockUser(blockedUserId);
+      dispatch(removeBlockedUser(blockedUserId));
+    } catch (error) {
+      console.error('Unblock user error:', error);
+      throw error;
+    }
+  }, [dispatch]);
+
+  // Fetch raw conversation entities via GET /conversation/get
+  const fetchRawConversations = useCallback(async (currentUserId, page = 0, size = 20) => {
+    try {
+      return await conversationService.getConversations(currentUserId, page, size);
+    } catch (error) {
+      console.error('Fetch raw conversations error:', error);
+      throw error;
+    }
+  }, []);
 
   // Sends local typing status to the backend via WebSocket
   const sendTypingStatus = useCallback((isTyping) => {
@@ -244,28 +442,44 @@ export const ChatProvider = ({ children }) => {
     loadingConversations,
     loadingMessages,
     fetchConversations,
+    fetchRawConversations,
     fetchMessages,
+    fetchOlderMessages,
+    pagination,
     markAsRead,
     startConversation,
     addMessage,
     updateConversationSummary,
     clearConversation,
     removeConversation,
-    sendTypingStatus
+    sendTypingStatus,
+    editMessage,
+    deleteForEveryone,
+    deleteForMe,
+    blockUser,
+    unblockUser
   }), [
     conversationList,
     conversations,
     loadingConversations,
     loadingMessages,
     fetchConversations,
+    fetchRawConversations,
     fetchMessages,
+    fetchOlderMessages,
+    pagination,
     markAsRead,
     startConversation,
     addMessage,
     updateConversationSummary,
     clearConversation,
     removeConversation,
-    sendTypingStatus
+    sendTypingStatus,
+    editMessage,
+    deleteForEveryone,
+    deleteForMe,
+    blockUser,
+    unblockUser
   ]);
 
   return (

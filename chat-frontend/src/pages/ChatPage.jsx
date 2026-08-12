@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
-import { selectSelectedChatUserId, incrementUnread, addOnlineUser, updateUserPresence, setTypingStatus, updateMessageStatus, updateSingleMessageStatus } from '../features/chat/chatSlice';
+import { selectSelectedChatUserId, incrementUnread, addOnlineUser, updateUserPresence, setTypingStatus, updateMessageStatus, updateSingleMessageStatus, handleSentAck, updateEditedMessage, updateDeletedMessage } from '../features/chat/chatSlice';
 import { setConnectionState } from '../features/websocket/websocketSlice';
 import { selectCurrentUserId, setCurrentUser } from '../features/auth/authSlice';
 import AppLayout from '../layouts/AppLayout';
@@ -95,13 +95,20 @@ export const ChatPage = () => {
               console.log('STOMP Message received:', body);
 
               const { conversationId, content, senderId, receivedAt } = body;
+              const realMessageId = body.messageId || body.id;
 
               const messagePayload = {
-                id: `${senderId}-${currentUserIdRef.current}-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+                id: realMessageId || `${senderId}-${currentUserIdRef.current}-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+                messageId: realMessageId || null,
+                conversationId: conversationId || body.conversationId || null,
                 senderId: senderId,
                 receiverId: currentUserIdRef.current,
                 content: content,
-                timestamp: receivedAt || new Date().toISOString()
+                timestamp: receivedAt || new Date().toISOString(),
+                isEdited: !!(body.isEdited || body.edited),
+                editedAt: body.editedAt || null,
+                deletedFromEveryOne: !!(body.deletedFromEveryOne || body.isDeletedForEveryone),
+                status: body.status || 'DELIVERED'
               };
 
               // Add peer user to online list
@@ -136,11 +143,11 @@ export const ChatPage = () => {
                 toastHelper.chat.newMessage(senderId, content);
               }
 
-              // Automatically send Delivery ACK for the newly received incoming message
-              const incomingMessageId = body.id || body.messageId;
-              if (incomingMessageId) {
+              // Automatically send Delivery ACK for the newly received incoming message using backend messageId
+              if (realMessageId) {
                 try {
-                  chatService.sendDeliveryAck(incomingMessageId);
+                  console.log('Sending automatic delivery ack for message ID:', realMessageId);
+                  chatService.sendDeliveryAck(realMessageId);
                 } catch (ackErr) {
                   console.error('Failed to send automatic delivery ack:', ackErr);
                 }
@@ -155,17 +162,28 @@ export const ChatPage = () => {
             try {
               const body = JSON.parse(msg.body);
               console.log('STOMP Notification Event received:', body);
-
               if (body && body.eventType) {
                 const { eventType, payload } = body;
+              
+                console.log(`Notification Event Type: ${eventType}, Payload:`, payload);
                 if (eventType === 'USER_ONLINE') {
+                  console.log(`User ${payload.userId} is now online.`);
                   dispatch(updateUserPresence({ userId: payload.userId, online: true }));
                 } else if (eventType === 'USER_OFFLINE') {
+                  console.log(`User ${payload.userId} is now offline.`);
                   dispatch(updateUserPresence({ userId: payload.userId, online: false }));
                 } else if (eventType === 'USER_TYPING') {
                   dispatch(setTypingStatus({ userId: payload.senderId, typing: payload.typing }));
                 } else if (eventType === 'USER_MESSAGE') {
-                  if (payload.status === 'DELIVERED' && payload.messageId) {
+                  const messageTempId = payload.messageTempId || payload.tempMessageId;
+                  if (messageTempId && payload.messageId) {
+                    dispatch(handleSentAck({
+                      messageTempId,
+                      messageId: payload.messageId,
+                      messageStatus: payload.messageStatus || payload.status,
+                      conversationId: payload.conversationId
+                    }));
+                  } else if (payload.status === 'DELIVERED' && payload.messageId) {
                     dispatch(updateSingleMessageStatus({
                       conversationId: payload.conversationId,
                       messageId: payload.messageId,
@@ -179,6 +197,18 @@ export const ChatPage = () => {
                       currentUserId: currentUserIdRef.current
                     }));
                   }
+                } else if (eventType === 'MESSAGE_EDITED') {
+                  dispatch(updateEditedMessage({
+                    conversationId: payload.conversationId,
+                    messageId: payload.messageId,
+                    content: payload.content
+                  }));
+                } else if (eventType === 'MESSAGE_DELETED') {
+                  dispatch(updateDeletedMessage({
+                    conversationId: payload.conversationId,
+                    messageId: payload.messageId,
+                    content: payload.content
+                  }));
                 } else {
                   console.log('Unhandled WebSocket event type:', eventType);
                 }
@@ -281,12 +311,16 @@ export const ChatPage = () => {
   const handleSendMessage = async (text) => {
     if (!selectedChatUserId || !currentUserId) return;
 
+    const tempId = `temp-${currentUserId}-${selectedChatUserId}-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+
     const messagePayload = {
-      id: `${currentUserId}-${selectedChatUserId}-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      id: tempId,
+      tempMessageId: tempId,
       senderId: currentUserId,
       receiverId: selectedChatUserId,
       content: text,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      status: null
     };
 
     // 1. Append message locally in logs cache
@@ -296,12 +330,29 @@ export const ChatPage = () => {
     // 2. Update conversation summary last message preview instantly
     updateConversationSummary(selectedChatUserId, text, messagePayload.timestamp, false);
 
-    // 3. Publish via WebSocket to STOMP Broker
+    // 3. Publish via WebSocket to STOMP Broker (with REST fallback)
     try {
       chatService.sendMessage(messagePayload);
     } catch (error) {
-      console.error('Failed to send message via WebSocket service:', error);
-      toastHelper.error('Message delivery failed: WebSocket is disconnected.');
+      console.warn('WebSocket message publish failed, attempting REST fallback:', error);
+      const activeSummary = conversationList.find(
+        (c) => c.receiver.userId.toLowerCase() === selectedChatUserId.toLowerCase()
+      );
+      if (activeSummary && activeSummary.conversationId) {
+        try {
+          await messageService.sendMessageFallback(
+            { receiver: selectedChatUserId, content: text, tempMessageId: messagePayload.tempMessageId },
+            currentUserId,
+            activeSummary.conversationId
+          );
+          toastHelper.info('Message delivered via REST fallback.');
+        } catch (fallbackErr) {
+          console.error('REST fallback message delivery failed:', fallbackErr);
+          toastHelper.error(fallbackErr.message || 'Message delivery failed: WebSocket and REST fallback failed.');
+        }
+      } else {
+        toastHelper.error('Message delivery failed: WebSocket is disconnected.');
+      }
     }
   };
 

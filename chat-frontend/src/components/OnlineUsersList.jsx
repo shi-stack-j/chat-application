@@ -68,9 +68,9 @@ export const OnlineUsersList = () => {
               title={`Chat with ${userId}`}
             >
               {/* Profile icon with pulsing online indicator dot */}
-              <div className="relative transform transition group-hover:scale-105 duration-200">
+              <div className="relative transform transition-transform duration-200 group-hover:-translate-y-0.5 group-hover:scale-105">
                 <UserAvatar userId={userId} size="sm" showStatus={false} />
-                <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-emerald-500 rounded-full border-2 border-white dark:border-slate-900"></span>
+                <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-emerald-500 rounded-full border-2 border-white dark:border-slate-900 shadow-xs"></span>
               </div>
 
               {/* Short truncated username */}

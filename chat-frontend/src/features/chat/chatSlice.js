@@ -18,11 +18,14 @@ const initialState = {
   selectedChatUserId: null, // userId of active partner
   messages: {}, // Keyed by conversationId (number) or chatUserId (string) -> Array of ChatMessage
   unreadCounts: {}, // Keyed by chatUserId -> count
+  totalUnreadCount: 0, // Overall unread count across all conversations
   onlineUsers: [], // Array of online userIds
   typingUsers: {}, // Keyed by chatUserId -> boolean
+  blockedUsers: [], // Array of blocked userIds
   searchQuery: '',
   loadingConversations: false,
-  loadingMessages: false
+  loadingMessages: false,
+  pagination: {} // Keyed by conversationId or chatUserId -> { page: 0, hasMore: true, loadingOlder: false }
 };
 
 const chatSlice = createSlice({
@@ -31,6 +34,9 @@ const chatSlice = createSlice({
   reducers: {
     setConversations: (state, action) => {
       state.conversations = action.payload;
+    },
+    setTotalUnreadCount: (state, action) => {
+      state.totalUnreadCount = action.payload || 0;
     },
     setSelectedChat: (state, action) => {
       state.selectedChatUserId = action.payload;
@@ -65,9 +71,28 @@ const chatSlice = createSlice({
         }
       }
       
-      // Deduplicate by message ID or fallback custom uniqueness check
-      const exists = state.messages[key].some((m) => m.id === message.id);
-      if (!exists) {
+      const msgId = String(message.id || message.messageId || '');
+      const tempId = String(message.tempMessageId || '');
+
+      const existingIndex = state.messages[key].findIndex((m) => {
+        const mId = String(m.id || m.messageId || '');
+        const mTempId = String(m.tempMessageId || '');
+        return (msgId && mId === msgId) || (tempId && mTempId === tempId);
+      });
+
+      if (existingIndex !== -1) {
+        const existingMsg = state.messages[key][existingIndex];
+        // Terminal status check: BLOCKED messages must never lose BLOCKED status
+        const finalStatus = (existingMsg.status === 'BLOCKED' || message.status === 'BLOCKED') 
+          ? 'BLOCKED' 
+          : (message.status || existingMsg.status);
+
+        state.messages[key][existingIndex] = {
+          ...existingMsg,
+          ...message,
+          status: finalStatus
+        };
+      } else {
         state.messages[key].push(message);
       }
     },
@@ -135,6 +160,11 @@ const chatSlice = createSlice({
     },
     addOnlineUser: (state, action) => {
       const userId = action.payload;
+      if (!userId) return;
+      const isBlocked = (state.blockedUsers || []).some(
+        (id) => id.toLowerCase() === userId.toLowerCase()
+      );
+      if (isBlocked) return;
       if (!state.onlineUsers.includes(userId)) {
         state.onlineUsers.push(userId);
       }
@@ -150,6 +180,81 @@ const chatSlice = createSlice({
     },
     setLoadingMessages: (state, action) => {
       state.loadingMessages = action.payload;
+    },
+    setPaginationInfo: (state, action) => {
+      const { key, conversationId, chatUserId, page, hasMore, loadingOlder } = action.payload;
+      const keys = [];
+      if (key) keys.push(key);
+      if (conversationId) keys.push(conversationId);
+      if (chatUserId) keys.push(chatUserId);
+      if (conversationId && !chatUserId) {
+        const conv = state.conversations.find((c) => c.conversationId === conversationId);
+        if (conv) keys.push(conv.receiver.userId);
+      }
+      const uniqueKeys = Array.from(new Set(keys));
+
+      uniqueKeys.forEach((k) => {
+        const current = state.pagination[k] || { page: 0, hasMore: true, loadingOlder: false };
+        state.pagination[k] = {
+          page: page !== undefined ? page : current.page,
+          hasMore: hasMore !== undefined ? hasMore : current.hasMore,
+          loadingOlder: loadingOlder !== undefined ? loadingOlder : current.loadingOlder
+        };
+      });
+    },
+    setLoadingOlderMessages: (state, action) => {
+      const { conversationId, chatUserId, loading } = action.payload;
+      const keys = [];
+      if (conversationId) keys.push(conversationId);
+      if (chatUserId) keys.push(chatUserId);
+      if (conversationId && !chatUserId) {
+        const conv = state.conversations.find((c) => c.conversationId === conversationId);
+        if (conv) keys.push(conv.receiver.userId);
+      }
+      const uniqueKeys = Array.from(new Set(keys));
+      uniqueKeys.forEach((key) => {
+        const current = state.pagination[key] || { page: 0, hasMore: true, loadingOlder: false };
+        state.pagination[key] = { ...current, loadingOlder: loading };
+      });
+    },
+    prependMessages: (state, action) => {
+      const { conversationId, chatUserId, messages, page, hasMore } = action.payload;
+      const keys = [];
+      if (conversationId) keys.push(conversationId);
+      if (chatUserId) keys.push(chatUserId);
+
+      if (conversationId && !chatUserId) {
+        const conv = state.conversations.find((c) => c.conversationId === conversationId);
+        if (conv) keys.push(conv.receiver.userId);
+      }
+
+      const uniqueKeys = Array.from(new Set(keys));
+
+      uniqueKeys.forEach((key) => {
+        const currentList = state.messages[key] || [];
+        const existingIds = new Set();
+        currentList.forEach((m) => {
+          if (m.id) existingIds.add(String(m.id));
+          if (m.messageId) existingIds.add(String(m.messageId));
+          if (m.tempMessageId) existingIds.add(String(m.tempMessageId));
+        });
+
+        const newUnique = messages.filter((m) => {
+          const id = String(m.id || '');
+          const msgId = String(m.messageId || '');
+          const tempId = String(m.tempMessageId || '');
+          return !existingIds.has(id) && (!msgId || !existingIds.has(msgId)) && (!tempId || !existingIds.has(tempId));
+        });
+
+        state.messages[key] = [...newUnique, ...currentList];
+
+        const currentPag = state.pagination[key] || { page: 0, hasMore: true, loadingOlder: false };
+        state.pagination[key] = {
+          page: page !== undefined ? page : currentPag.page,
+          hasMore: hasMore !== undefined ? hasMore : currentPag.hasMore,
+          loadingOlder: false
+        };
+      });
     },
     updateConversationSummary: (state, action) => {
       const { chatUserId, content, timestamp, incrementUnread, conversationId } = action.payload;
@@ -198,12 +303,23 @@ const chatSlice = createSlice({
     updateUserPresence: (state, action) => {
       const { userId, online } = action.payload;
       const targetId = userId;
-      
+      if (!targetId) return;
+
+      const isBlocked = (state.blockedUsers || []).some(
+        (id) => id.toLowerCase() === targetId.toLowerCase()
+      );
+      const conv = state.conversations.find(
+        (c) => c.receiver.userId.toLowerCase() === targetId.toLowerCase()
+      );
+      const isConvBlocked = conv && (conv.isOtherUserBlocked || conv.otherUserBlocked);
+
+      const effectiveOnline = (isBlocked || isConvBlocked) ? false : online;
+
       const exists = state.onlineUsers.some(
         (id) => id.toLowerCase() === targetId.toLowerCase()
       );
 
-      if (online) {
+      if (effectiveOnline) {
         if (!exists) {
           state.onlineUsers.push(targetId);
         }
@@ -219,7 +335,7 @@ const chatSlice = createSlice({
             ...c,
             receiver: {
               ...c.receiver,
-              isOnline: online
+              isOnline: effectiveOnline
             }
           };
         }
@@ -242,6 +358,10 @@ const chatSlice = createSlice({
           state.messages[key] = state.messages[key].map((msg) => {
             const isMe = msg.senderId.toLowerCase() === currentUserId.toLowerCase();
             if (isMe) {
+              // Terminal status check: BLOCKED message status must never be overwritten
+              if (msg.status === 'BLOCKED') {
+                return msg;
+              }
               if (status === 'READ') {
                 return { ...msg, status: 'READ' };
               }
@@ -273,13 +393,18 @@ const chatSlice = createSlice({
             targetIndex = messageList.findIndex((msg) => {
               const isMe = msg.senderId.toLowerCase() === currentUserId.toLowerCase();
               const isTempId = typeof msg.id === 'string' && isNaN(Number(msg.id));
-              return isMe && isTempId && msg.status !== 'READ' && msg.status !== 'DELIVERED';
+              return isMe && isTempId && msg.status !== 'READ' && msg.status !== 'DELIVERED' && msg.status !== 'BLOCKED';
             });
           }
 
           if (targetIndex !== -1) {
             const updatedMessages = [...messageList];
             const msgToUpdate = updatedMessages[targetIndex];
+
+            // Terminal status check: BLOCKED message status must never be overwritten
+            if (msgToUpdate.status === 'BLOCKED') {
+              return;
+            }
 
             updatedMessages[targetIndex] = {
               ...msgToUpdate,
@@ -292,6 +417,183 @@ const chatSlice = createSlice({
         }
       });
     },
+    handleSentAck: (state, action) => {
+      const { messageTempId, messageId, messageStatus, conversationId } = action.payload;
+      if (!messageTempId) return;
+
+      Object.keys(state.messages).forEach((key) => {
+        const messageList = state.messages[key];
+        if (messageList) {
+          const targetIndex = messageList.findIndex(
+            (msg) => String(msg.tempMessageId || msg.id) === String(messageTempId)
+          );
+
+          if (targetIndex !== -1) {
+            const msgToUpdate = messageList[targetIndex];
+
+            // Determine status: BLOCKED is terminal; NEVER overwrite DELIVERED or READ with SENT
+            let statusToApply = messageStatus;
+            if (msgToUpdate.status === 'BLOCKED' || messageStatus === 'BLOCKED') {
+              statusToApply = 'BLOCKED';
+            } else if (msgToUpdate.status === 'READ') {
+              statusToApply = 'READ';
+            } else if (msgToUpdate.status === 'DELIVERED' && messageStatus === 'SENT') {
+              statusToApply = 'DELIVERED';
+            }
+
+            const updatedMsg = {
+              ...msgToUpdate,
+              id: messageId,
+              messageId: messageId,
+              tempMessageId: messageTempId,
+              conversationId: conversationId || msgToUpdate.conversationId,
+              status: statusToApply
+            };
+
+            messageList[targetIndex] = updatedMsg;
+          }
+        }
+      });
+
+      if (conversationId) {
+        state.conversations = state.conversations.map((c) => {
+          if (!c.conversationId && c.receiver) {
+            const key = c.receiver.userId;
+            const msgs = state.messages[key];
+            if (msgs && msgs.some((m) => String(m.id) === String(messageId))) {
+              return { ...c, conversationId };
+            }
+          }
+          return c;
+        });
+
+        const conv = state.conversations.find((c) => c.conversationId === conversationId);
+        if (conv) {
+          const userKey = conv.receiver.userId;
+          if (state.messages[userKey] && !state.messages[conversationId]) {
+            state.messages[conversationId] = state.messages[userKey];
+          }
+        }
+      }
+    },
+    updateEditedMessage: (state, action) => {
+      const { conversationId, messageId, content } = action.payload;
+      const conv = state.conversations.find((c) => c.conversationId === conversationId);
+      const keys = [conversationId];
+      if (conv) {
+        keys.push(conv.receiver.userId);
+      }
+      keys.forEach((key) => {
+        if (state.messages[key]) {
+          state.messages[key] = state.messages[key].map((msg) => {
+            if (String(msg.id) === String(messageId) || String(msg.messageId) === String(messageId)) {
+              return {
+                ...msg,
+                content,
+                isEdited: true,
+                edited: true
+              };
+            }
+            return msg;
+          });
+        }
+      });
+      if (conv) {
+        const messageList = state.messages[conversationId] || state.messages[conv.receiver.userId];
+        if (messageList && messageList.length > 0) {
+          const lastMsg = messageList[messageList.length - 1];
+          if (String(lastMsg.id) === String(messageId) || String(lastMsg.messageId) === String(messageId)) {
+            conv.lastMessage = content;
+          }
+        }
+      }
+    },
+    updateDeletedMessage: (state, action) => {
+      const { conversationId, messageId, content = "This message was deleted." } = action.payload;
+      const conv = state.conversations.find((c) => c.conversationId === conversationId);
+      const keys = [conversationId];
+      if (conv) {
+        keys.push(conv.receiver.userId);
+      }
+      keys.forEach((key) => {
+        if (state.messages[key]) {
+          state.messages[key] = state.messages[key].map((msg) => {
+            if (String(msg.id) === String(messageId) || String(msg.messageId) === String(messageId)) {
+              return {
+                ...msg,
+                content,
+                isDeletedForEveryone: true,
+                deletedForEveryOne: true
+              };
+            }
+            return msg;
+          });
+        }
+      });
+      if (conv) {
+        const messageList = state.messages[conversationId] || state.messages[conv.receiver.userId];
+        if (messageList && messageList.length > 0) {
+          const lastMsg = messageList[messageList.length - 1];
+          if (String(lastMsg.id) === String(messageId) || String(lastMsg.messageId) === String(messageId)) {
+            conv.lastMessage = content;
+          }
+        }
+      }
+    },
+    deleteMessagesForMe: (state, action) => {
+      const { conversationId, messageIds, chatUserId } = action.payload;
+      const idsSet = new Set((Array.isArray(messageIds) ? messageIds : [messageIds]).map(String));
+      
+      const keys = [];
+      if (conversationId) keys.push(conversationId);
+      if (chatUserId) keys.push(chatUserId);
+
+      if (conversationId && !chatUserId) {
+        const conv = state.conversations.find((c) => c.conversationId === conversationId);
+        if (conv) keys.push(conv.receiver.userId);
+      }
+
+      keys.forEach((key) => {
+        if (state.messages[key]) {
+          state.messages[key] = state.messages[key].filter(
+            (msg) => !idsSet.has(String(msg.id))
+          );
+        }
+      });
+
+      const conv = state.conversations.find(
+        (c) => c.conversationId === conversationId || (chatUserId && c.receiver.userId.toLowerCase() === chatUserId.toLowerCase())
+      );
+      if (conv) {
+        const key = conv.conversationId || conv.receiver.userId;
+        const remaining = state.messages[key];
+        if (remaining && remaining.length > 0) {
+          const lastMsg = remaining[remaining.length - 1];
+          conv.lastMessage = lastMsg.content;
+          conv.lastMessageTime = lastMsg.timestamp;
+        } else if (remaining && remaining.length === 0) {
+          conv.lastMessage = null;
+          conv.lastMessageTime = null;
+        }
+      }
+    },
+    setBlockedUsers: (state, action) => {
+      state.blockedUsers = action.payload || [];
+    },
+    addBlockedUser: (state, action) => {
+      const userId = action.payload;
+      if (userId && !state.blockedUsers.some((id) => id.toLowerCase() === userId.toLowerCase())) {
+        state.blockedUsers.push(userId);
+      }
+    },
+    removeBlockedUser: (state, action) => {
+      const userId = action.payload;
+      if (userId) {
+        state.blockedUsers = state.blockedUsers.filter(
+          (id) => id.toLowerCase() !== userId.toLowerCase()
+        );
+      }
+    },
     resetChatState: (state) => {
       state.conversations = [];
       state.selectedChatUserId = null;
@@ -299,6 +601,7 @@ const chatSlice = createSlice({
       state.unreadCounts = {};
       state.onlineUsers = [];
       state.typingUsers = {};
+      state.blockedUsers = [];
       state.searchQuery = '';
       state.loadingConversations = false;
       state.loadingMessages = false;
@@ -308,6 +611,7 @@ const chatSlice = createSlice({
 
 export const {
   setConversations,
+  setTotalUnreadCount,
   setSelectedChat,
   clearSelectedChat,
   setMessages,
@@ -319,14 +623,24 @@ export const {
   setOnlineUsers,
   addOnlineUser,
   removeOnlineUser,
+  setBlockedUsers,
+  addBlockedUser,
+  removeBlockedUser,
   setSearchQuery,
   setLoadingConversations,
   setLoadingMessages,
+  setPaginationInfo,
+  setLoadingOlderMessages,
+  prependMessages,
   updateConversationSummary,
   updateUserPresence,
   setTypingStatus,
   updateMessageStatus,
   updateSingleMessageStatus,
+  handleSentAck,
+  updateEditedMessage,
+  updateDeletedMessage,
+  deleteMessagesForMe,
   resetChatState
 } = chatSlice.actions;
 
@@ -335,11 +649,30 @@ export const selectConversations = (state) => state.chat.conversations;
 export const selectSelectedChatUserId = (state) => state.chat.selectedChatUserId;
 export const selectAllMessages = (state) => state.chat.messages;
 export const selectUnreadCounts = (state) => state.chat.unreadCounts;
+export const selectTotalUnreadCount = (state) => state.chat.totalUnreadCount;
 export const selectOnlineUsers = (state) => state.chat.onlineUsers;
 export const selectTypingUsers = (state) => state.chat.typingUsers;
+export const selectBlockedUsers = (state) => state.chat.blockedUsers || [];
 export const selectSearchQuery = (state) => state.chat.searchQuery;
 export const selectLoadingConversations = (state) => state.chat.loadingConversations;
 export const selectLoadingMessages = (state) => state.chat.loadingMessages;
+
+export const selectPaginationInfo = (state, key) => {
+  if (!key) return { page: 0, hasMore: true, loadingOlder: false };
+  return state.chat.pagination[key] || { page: 0, hasMore: true, loadingOlder: false };
+};
+
+export const selectActivePagination = (state) => {
+  const activeUser = state.chat.selectedChatUserId;
+  if (!activeUser) return { page: 0, hasMore: true, loadingOlder: false };
+  const summary = state.chat.conversations.find(
+    (c) => c.receiver.userId.toLowerCase() === activeUser.toLowerCase()
+  );
+  if (summary && summary.conversationId && state.chat.pagination[summary.conversationId]) {
+    return state.chat.pagination[summary.conversationId];
+  }
+  return state.chat.pagination[activeUser] || { page: 0, hasMore: true, loadingOlder: false };
+};
 
 export const selectActiveMessages = (state) => {
   const activeUser = state.chat.selectedChatUserId;

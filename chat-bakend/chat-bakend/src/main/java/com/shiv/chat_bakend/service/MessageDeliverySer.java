@@ -34,7 +34,8 @@ public class MessageDeliverySer {
     private NotificationServ notificationServ;
 
 //    This method is used to create the delivery for the existing method
-    public ResponseEntity<?> createDelivery(MessageEn messageEn){
+    @Transactional
+    public ResponseEntity<?> createDelivery(MessageEn messageEn,boolean isBlocked){
         if(messageEn==null )return ResponseEntity.badRequest().body("Message request is not valid");
         UserEn receiver=messageEn.getReceiver();
         if(receiver==null || receiver.isDeleted() || !receiver.isActive()) {
@@ -42,13 +43,13 @@ public class MessageDeliverySer {
         }
 
         boolean isReceiverOnline = onlinePresenceSer.isOnline(receiver.getUserId());
-        MessageStatusEnum status = isReceiverOnline ? MessageStatusEnum.DELIVERED : MessageStatusEnum.SENT;
+        MessageStatusEnum status = isBlocked ? MessageStatusEnum.BLOCKED : MessageStatusEnum.SENT;
         MessageDeliveryEn messageDeliveryEn= MessageDeliveryMapper.toMessageDeliveryEn(messageEn, status);
         if (isReceiverOnline) {
             messageDeliveryEn.setDeliveredAt(java.time.LocalDateTime.now());
         }
         messageDeliveryRepo.save(messageDeliveryEn);
-        if (isReceiverOnline) {
+        if (isReceiverOnline && !isBlocked) {
             notificationServ.notifyDelivery(messageEn.getSender().getUserId(), messageEn.getConversation().getId());
         }
         return ResponseEntity.ok("Message Delivery Created");
@@ -69,13 +70,18 @@ public class MessageDeliverySer {
 //    This method is used to mark the message as delivered
     @Transactional
     public ResponseEntity<?> markAsDelivered(String userId){
+//        This user Id is the id of the user who is currently loggedIn
         if(userId==null || userId.isBlank()){
             return ResponseEntity.badRequest().body("userID is not valid");
         }
+//        Here we are finding the user the it actually exists or not
         boolean userExists=userRep.existsByUserIdAndDeletedFalseAndIsActiveTrue(userId);
         if(!userExists )return ResponseEntity.badRequest().body("User not found");
+//        Here we are getting the Id of Senders and the Conversation whoes message status is SENT
         java.util.List<Object[]> pending = messageDeliveryRepo.findPendingSendersAndConversations(userId);
+//        Here we are marking pending messages as delivered
         int count= messageDeliveryRepo.markPendingMessagesDelivered(userId);
+//        Now here we are informing all the senders that your messages are delivered Successfully
         if (pending != null && !pending.isEmpty()) {
             for (Object[] item : pending) {
                 String senderId = (String) item[0];
@@ -105,7 +111,7 @@ public class MessageDeliverySer {
         boolean conversationExists=conversationRepo.existsById(conversationId);
         boolean userExists=userRep.existsByUserIdAndDeletedFalseAndIsActiveTrue(userId);
         if(!conversationExists || !userExists )return ResponseEntity.badRequest().body("Conversation or User not found");
-        Long count=messageDeliveryRepo.countUnreadMessagesByConversation(userId,conversationId);
+        Long count=messageDeliveryRepo.countUnreadMessagesByConversation(userId,conversationId,null);
         return ResponseEntity.ok(count);
     }
 }

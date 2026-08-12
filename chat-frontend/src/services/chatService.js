@@ -57,6 +57,7 @@ class ChatService {
     const chatMessage = {
       receiver: message.receiverId, // maps to backend expected receiver (min=3 size validation)
       content: message.content,
+      tempMessageId: message.tempMessageId || message.id, // unique temporary message ID
       sendAt: message.timestamp // Maps ISO 8601 timestamp string
     };
 

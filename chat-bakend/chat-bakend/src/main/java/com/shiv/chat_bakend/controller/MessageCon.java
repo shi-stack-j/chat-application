@@ -1,5 +1,6 @@
 package com.shiv.chat_bakend.controller;
 import com.shiv.chat_bakend.dto.message.MarkReadReqDto;
+import com.shiv.chat_bakend.dto.message.MessageEditReqDto;
 import com.shiv.chat_bakend.dto.message.MessageReadReqDto;
 import com.shiv.chat_bakend.dto.message.MessageReqDto;
 import com.shiv.chat_bakend.service.MessageDeliverySer;
@@ -57,14 +58,15 @@ public class MessageCon {
         if(messageReadReqDto==null)return ResponseEntity.badRequest().body("Read Request is not valid");
         return messageSer.getLatestConversationMessages(messageReadReqDto,pageable);
     }
+//    This must not be needed by frontend it only for testing purpose it does not have any work with frontend
 //    Checked
-    @PostMapping("/send/message/")
+    @PostMapping("/send/message")
     public ResponseEntity<?> sendMessage(
             @RequestHeader("X-Conversation-Id")Long conversationId,
             @Valid @RequestBody MessageReqDto messageReqDto
     ){
         if(conversationId==null || conversationId<=0)return ResponseEntity.badRequest().body("Conversation id is not valid");
-        messageSer.sendMessage(messageReqDto,"");
+//        messageSer.sendMessage(messageReqDto,"");
         return ResponseEntity.ok("Message Sent successfully");
     }
 
@@ -76,5 +78,20 @@ public class MessageCon {
         String userId=principal.getName();
         if(userId==null || userId.isBlank() || userId.length()<3)return ResponseEntity.badRequest().body("UserId is not valid");
         return messageDeliverySer.markAsDelivered(userId);
+    }
+
+    @DeleteMapping("/{messageId}/delete-for-everyone")
+    public ResponseEntity<?> deleteForEveryone(
+            @PathVariable Long messageId
+    ) {
+        return messageSer.deleteFromEveryOne(messageId);
+    }
+
+
+    @PutMapping("/edit")
+    public ResponseEntity<?> updateMessage(
+            @RequestBody MessageEditReqDto reqDto
+    ) {
+        return messageSer.editMessage(reqDto);
     }
 }

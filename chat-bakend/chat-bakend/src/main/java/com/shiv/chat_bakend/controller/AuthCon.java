@@ -6,6 +6,7 @@ import com.shiv.chat_bakend.service.AuthSer;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
 import jakarta.validation.Valid;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -16,6 +17,7 @@ import java.security.Principal;
 //Description :- This is the controller that will handle all login and register flow
 @RestController
 @RequestMapping("/auth")
+@Slf4j
 public class AuthCon {
     @Autowired
     private AuthSer authSer;
@@ -23,6 +25,7 @@ public class AuthCon {
 //    Checked
     @PostMapping("/register")
     public ResponseEntity<?> registerUser(@Valid @RequestBody RegisterReqDto reqDto){
+        log.info("Calling the Register Controller with ..");
         if(reqDto==null)return ResponseEntity.badRequest().body("Provide valid registration details");
         return authSer.register(reqDto);
     }
@@ -30,6 +33,7 @@ public class AuthCon {
 //    Checked
     @PostMapping("/login")
     public ResponseEntity<?> login(@Valid @RequestBody LogReqDto reqDto,HttpServletRequest servletRequest){
+        log.info("Calling the Login Controller/...");
         if(reqDto==null)return ResponseEntity.badRequest().body("Provide valid login details");
         return authSer.login(reqDto,servletRequest);
     }

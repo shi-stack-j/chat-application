@@ -12,6 +12,7 @@ import org.springframework.stereotype.Repository;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 @Repository
 public interface ConversationRepo extends JpaRepository<ConversationEn , Long> {
@@ -69,4 +70,37 @@ public interface ConversationRepo extends JpaRepository<ConversationEn , Long> {
             @Param("senderId") String senderId
     );
 
+    @Query("""
+        SELECT c FROM
+        ConversationEn c
+        WHERE 
+            c.id = :conversationId
+            AND 
+            (
+                c.userOne.userId = :userId
+                OR
+                c.userTwo.userId = :userId
+            )
+    """)
+    Optional<ConversationEn> findAuthorizedConversation(
+            @Param("conversationId") Long conversationId,
+            @Param("userId") String userId
+    );
+
+    @Query("""
+            SELECT
+                CASE
+                    WHEN c.userOne.userId = :userId
+                    THEN c.userTwo.userId
+                    ELSE c.userOne.userId
+                END
+            FROM ConversationEn c
+            WHERE
+                c.userOne.userId = :userId
+                OR
+                c.userTwo.userId = :userId
+    """)
+    Set<String> findFriendIds(
+            @Param("userId") String userId
+    );
 }

@@ -4,12 +4,13 @@ import com.shiv.chat_bakend.dto.conversation.ConversationDto;
 import com.shiv.chat_bakend.dto.conversation.ConversationReqDto;
 import com.shiv.chat_bakend.dto.conversation.ConversationSummaryResDto;
 import com.shiv.chat_bakend.dto.user.UserResDto;
-import com.shiv.chat_bakend.enums.MessageStatusEnum;
 import com.shiv.chat_bakend.mapper.ConversationMapper;
 import com.shiv.chat_bakend.mapper.UserMapper;
 import com.shiv.chat_bakend.model.ConversationEn;
+import com.shiv.chat_bakend.model.ConversationVisibilityEn;
 import com.shiv.chat_bakend.model.MessageEn;
 import com.shiv.chat_bakend.model.UserEn;
+import com.shiv.chat_bakend.projection.UserBlockProjection;
 import com.shiv.chat_bakend.repository.*;
 import jakarta.transaction.Transactional;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -23,10 +24,14 @@ import org.springframework.stereotype.Service;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 @Service
 public class ConversationSer {
-
+    @Autowired
+    private UserBlockSer userBlockSer;
+    @Autowired
+    private ConversationVisibilityRepo conversationVisibilityRepo;
     @Autowired
     private ConversationRepo conversationRepo;
     @Autowired
@@ -41,6 +46,11 @@ public class ConversationSer {
     private OnlinePresenceSer onlinePresenceSer;
     @Autowired
     private CurrentUserSer currentUserSer;
+    @Autowired
+    private MessageVisibilityRepo messageVisibilityRepo;
+    @Autowired
+    private UserBlockRepo userBlockRepo;
+
     //    This method is used to return the conversation of the user
 //    IT is not getting used anywhere inside the frontend
     public ResponseEntity<?> getUserConversations(Pageable pageable){
@@ -64,16 +74,36 @@ public class ConversationSer {
     public ConversationSummaryResDto convertToSummary(ConversationEn conversationEn,String user_id){
 
         if(conversationEn==null || user_id==null || user_id.isBlank())throw new RuntimeException("Conversation details or user id is not valid");
-        long unreadMessages=messageDeliveryRepo.countUnreadMessagesByConversation(user_id,conversationEn.getId());
+//        First we are fetching the last cleared time for this conversation for this user
+        Optional<ConversationVisibilityEn> conversationVisibilityEn=conversationVisibilityRepo.findClearConversation(conversationEn.getId(),user_id);
+        LocalDateTime clearedAt=null;
+        if(conversationVisibilityEn.isPresent())clearedAt=conversationVisibilityEn.get().getClearedAt();
+//        Now we are fetching the ids of the deleted messages of this conversation for particular user
+        Set<Long> deletedMessageIds=messageVisibilityRepo.findDeletedMessageIds(user_id,conversationEn.getId(),clearedAt);
+//        Now we have to fetch the unread messages of this conversation
+        long unreadMessages;
+        List<MessageEn> lastMessage;
+        Page<MessageEn> allMessage;
         Pageable pageable=PageRequest.of(0,1);
-        Page<MessageEn> allMessage=messageRepo.findByConversation_IdOrderBySentAtDesc(conversationEn.getId(),pageable);
-        List<MessageEn> lastMessage=allMessage.getContent();
+//        Now we are fetching the last message of the conversation
+        if(deletedMessageIds.isEmpty()){
+            unreadMessages=messageDeliveryRepo.countUnreadMessagesByConversation(user_id,conversationEn.getId(),clearedAt);
+            allMessage=messageRepo.findMessagesOfConversation(conversationEn.getId(),clearedAt,user_id ,pageable);
+            lastMessage=allMessage.getContent();
+        }
+        else{
+//            Here the deleted message ids are included means the messages which are deleted will we removed
+            unreadMessages=messageDeliveryRepo.countUnreadMessagesByConversationWithDeletedMessages(user_id, conversationEn.getId(), clearedAt,deletedMessageIds);
+            allMessage=messageRepo.findMessagesOfConversationWithDeleted(conversationEn.getId(),clearedAt,deletedMessageIds ,user_id,pageable);
+            lastMessage=allMessage.getContent();
+        }
+
         String lastMsg;
         LocalDateTime lastMessageTime;
         UserEn otherUser;
         if(lastMessage.isEmpty()){
             lastMsg="";
-            lastMessageTime=conversationEn.getLastMessageAt();
+            lastMessageTime=null;
         }else{
             lastMsg=lastMessage.get(0).getContent();
             lastMessageTime=lastMessage.get(0).getSentAt();
@@ -85,9 +115,16 @@ public class ConversationSer {
             otherUser=conversationEn.getUserOne();
         }
         UserEn userEn=userRep.findByUserIdAndIsActiveTrueAndDeletedFalse(user_id).orElseThrow();
-        boolean isOtherUserOnline= onlinePresenceSer.isOnline(otherUser.getUserId());
+        //        This is to check the block exists or not
+        UserBlockProjection blockProjection=userBlockRepo.findBlockInfoBetweenUsers(user_id,otherUser.getUserId());
+
+        boolean isOtherUserOnline,isOtherUserBlocked;
+        if(blockProjection.isAnyBlock())isOtherUserOnline=false;
+        else isOtherUserOnline = onlinePresenceSer.isOnline(otherUser.getUserId());
+        if(blockProjection.isCurrentUserBlocker())isOtherUserBlocked=true;
+        else isOtherUserBlocked=false;
         UserResDto resDto=UserMapper.toUserResDto(otherUser,isOtherUserOnline);
-        ConversationSummaryResDto conversationSummaryResDto=ConversationMapper.toConversationResSummary(conversationEn,resDto,lastMsg,unreadMessages);
+        ConversationSummaryResDto conversationSummaryResDto=ConversationMapper.toConversationResSummary(conversationEn,resDto,lastMsg,unreadMessages,lastMessageTime,isOtherUserBlocked);
         return conversationSummaryResDto;
     }
 //    This is internal method it is used only to convert the entity to the summary
@@ -126,11 +163,13 @@ public class ConversationSer {
             userOne=conversationReqDto.getReceiverId();
             userTwo=senderId;
         }
+//        This is to check the block
+        if (!userBlockSer.canUserCommunicate(senderId, conversationReqDto.getReceiverId())) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body("User not found.");
+        }
         Optional<ConversationEn> conversationEn=conversationRepo.findByUserOne_UserIdAndUserTwo_UserId(userOne,userTwo);
         if(conversationEn.isPresent()){
-            if(!conversationEn.get().getUserOne().equals(senderId) && !conversationEn.get().getUserTwo().equals(senderId)){
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Conversation does not belongs to you");
-            }
             ConversationDto conversationDto=ConversationMapper.toConversationDto(conversationEn.get());
             return ResponseEntity.ok(conversationDto);
         }

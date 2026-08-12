@@ -14,7 +14,8 @@ import java.util.Optional;
 @Service
 public class UserSer {
 
-
+    @Autowired
+    private UserBlockSer userBlockSer;
     @Autowired
     private UserRep userRep;
     @Autowired
@@ -25,6 +26,10 @@ public class UserSer {
     public ResponseEntity<?> getUser(String userId){
         if(userId==null || userId.isBlank() || userId.length()<3){
             throw new RuntimeException("User id is not valid");
+        }
+        if (!userBlockSer.canUserCommunicate(currentUserSer.getUserId(),userId)) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body("User not found.");
         }
 //        Making the db call to check for the user
         Optional<UserEn>userEn=userRep.findByUserIdAndIsActiveTrueAndDeletedFalse(userId);

@@ -1,7 +1,8 @@
-import { useEffect, useRef, useMemo } from 'react';
+import { useEffect, useLayoutEffect, useRef, useMemo } from 'react';
 import { useSelector } from 'react-redux';
 import { selectCurrentUserId } from '../features/auth/authSlice';
-import { selectTypingUsers } from '../features/chat/chatSlice';
+import { selectTypingUsers, selectActivePagination } from '../features/chat/chatSlice';
+import { useChat } from '../hooks/useChat';
 import MessageBubble from './MessageBubble';
 import UserAvatar from './UserAvatar';
 
@@ -38,17 +39,76 @@ const formatDateLabel = (dateString) => {
  * 
  * Aggregates, processes, and displays the thread's message history.
  * Groups consecutive messages from the same sender and inserts calendar date separators.
+ * Supports infinite upward pagination with scroll position preservation.
  */
 export const MessageList = ({ messages = [], chatUserId }) => {
   const currentUserId = useSelector(selectCurrentUserId);
   const typingUsers = useSelector(selectTypingUsers) || {};
+  const activePagination = useSelector(selectActivePagination);
   const isTyping = typingUsers[chatUserId.toLowerCase()];
-  const bottomRef = useRef(null);
+  
+  const { fetchOlderMessages } = useChat();
 
-  // Auto-scroll to bottom when new messages arrive, active conversation changes, or typing status changes
+  const containerRef = useRef(null);
+  const bottomRef = useRef(null);
+  const prevScrollHeightRef = useRef(0);
+  const isPrependingRef = useRef(false);
+  const isInitialLoadRef = useRef(true);
+
+  // Reset initial load flag when conversation changes
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, chatUserId, isTyping]);
+    isInitialLoadRef.current = true;
+    isPrependingRef.current = false;
+  }, [chatUserId]);
+
+  // Handle scroll to trigger fetch of older messages near top
+  const handleScroll = () => {
+    if (!containerRef.current) return;
+    const { scrollTop } = containerRef.current;
+
+    if (
+      scrollTop <= 100 &&
+      activePagination?.hasMore &&
+      !activePagination?.loadingOlder &&
+      !isPrependingRef.current
+    ) {
+      prevScrollHeightRef.current = containerRef.current.scrollHeight;
+      isPrependingRef.current = true;
+      fetchOlderMessages(chatUserId)
+        .then((res) => {
+          if (!res || res.count === 0) {
+            isPrependingRef.current = false;
+          }
+        })
+        .catch(() => {
+          isPrependingRef.current = false;
+        });
+    }
+  };
+
+  // Preserve scroll position synchronously when prepending older messages,
+  // or scroll to bottom on initial load / incoming new messages
+  useLayoutEffect(() => {
+    if (!containerRef.current) return;
+
+    if (isPrependingRef.current) {
+      const newScrollHeight = containerRef.current.scrollHeight;
+      const heightDiff = newScrollHeight - prevScrollHeightRef.current;
+      if (heightDiff > 0) {
+        containerRef.current.scrollTop += heightDiff;
+      }
+      isPrependingRef.current = false;
+    } else if (isInitialLoadRef.current && messages.length > 0) {
+      containerRef.current.scrollTop = containerRef.current.scrollHeight;
+      isInitialLoadRef.current = false;
+    } else if (!isPrependingRef.current) {
+      const { scrollTop, scrollHeight, clientHeight } = containerRef.current;
+      const isNearBottom = scrollHeight - (scrollTop + clientHeight) < 150;
+      if (isNearBottom) {
+        bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+      }
+    }
+  }, [messages, chatUserId]);
 
   // Chronologically processes the raw message feed, weaving in date separators and sender groupings
   const chatElements = useMemo(() => {
@@ -89,7 +149,24 @@ export const MessageList = ({ messages = [], chatUserId }) => {
   }, [messages]);
 
   return (
-    <div className="flex-1 overflow-y-auto px-4 py-4 space-y-1 bg-slate-50/30 dark:bg-slate-950/5 select-text scrollbar-thin">
+    <div
+      ref={containerRef}
+      onScroll={handleScroll}
+      className="flex-1 overflow-y-auto px-4 py-4 space-y-1 bg-slate-50/30 dark:bg-slate-950/5 select-text scrollbar-thin"
+    >
+      {/* Loading older messages indicator */}
+      {activePagination?.loadingOlder && (
+        <div className="flex items-center justify-center py-2 select-none animate-fade-in">
+          <div className="flex items-center space-x-2 text-xs text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-3 py-1.5 rounded-full shadow-sm border border-slate-200/50 dark:border-slate-700/50">
+            <svg className="animate-spin h-3.5 w-3.5 text-indigo-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <span>Loading older messages...</span>
+          </div>
+        </div>
+      )}
+
       {messages.length === 0 ? (
         /* Welcome empty message screen */
         <div className="flex flex-col items-center justify-center py-16 px-4 text-center select-none">
@@ -128,6 +205,7 @@ export const MessageList = ({ messages = [], chatUserId }) => {
               message={el.data}
               isMe={isMe}
               isConsecutive={el.isConsecutive}
+              chatUserId={chatUserId}
             />
           );
         })
@@ -151,3 +229,4 @@ export const MessageList = ({ messages = [], chatUserId }) => {
 };
 
 export default MessageList;
+

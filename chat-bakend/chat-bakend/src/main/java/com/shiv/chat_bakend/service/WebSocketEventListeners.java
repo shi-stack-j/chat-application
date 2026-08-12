@@ -17,11 +17,15 @@ public class WebSocketEventListeners {
     @Autowired
     private NotificationServ notificationServ;
 //    This will manage the onConnect Event
+//    Here we will se that what happens when someone send the connection request
+//    First the interceptor will check for the authentication and will authenticate the user
     @EventListener
     public void handleConnect(SessionConnectEvent event) {
         StompHeaderAccessor accessor = StompHeaderAccessor.wrap(event.getMessage());
+//        Here we are extracting the authenticated userId and session id
         String userId=accessor.getUser().getName();
         String sessionId=accessor.getSessionId();
+//        Here we are saving the user in the online users map
         boolean isCreated=onlinePresenceSer.saveOnlineUser(sessionId,userId);
         if(!isCreated)throw new RuntimeException("Internal Server error while creating the user");
 //        Marking all  messages as delivered

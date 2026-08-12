@@ -7,6 +7,7 @@ const handleResponse = async (response) => {
   if (!response.ok) {
     const errText = await response.text();
     let errMsg = 'API Request failed.';
+
     try {
       const errJson = JSON.parse(errText);
       errMsg = errJson.message || errJson.errorMessage || errMsg;
@@ -15,12 +16,16 @@ const handleResponse = async (response) => {
     }
     throw new Error(errMsg);
   }
-
+  let data;
   const contentType = response.headers.get('content-type');
   if (contentType && contentType.includes('application/json')) {
-    return await response.json();
+    data = await response.json();
+    console.log('API Response JSON:', data);
+    return data;
   }
-  return await response.text();
+  data = await response.text();
+  console.log('API Response Text:', data);
+  return data;
 };
 
 /**

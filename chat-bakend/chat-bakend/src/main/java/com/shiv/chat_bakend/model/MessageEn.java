@@ -38,16 +38,12 @@ public class MessageEn{
     )
     private Long id;
 
-
-
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(
             name="conversation_id",
             nullable=false
     )
     private ConversationEn conversation;
-
-
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(
@@ -56,8 +52,6 @@ public class MessageEn{
     )
     private UserEn sender;
 
-
-
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(
             name="receiver_id",
@@ -65,15 +59,11 @@ public class MessageEn{
     )
     private UserEn receiver;
 
-
-
     @Column(
             nullable=false,
             columnDefinition="TEXT"
     )
     private String content;
-
-
 
     @CreationTimestamp
     private LocalDateTime sentAt;
@@ -81,5 +71,14 @@ public class MessageEn{
     @CreationTimestamp
     private LocalDateTime createdAt;
 
+    @Column(
+            columnDefinition = "TEXT"
+    )
 
+    private String originalContent;
+    private boolean isDeletedForEveryOne=false;
+    private LocalDateTime deletedAt;
+
+    private LocalDateTime editedAt;
+    private boolean isEdited=false;
 }

@@ -38,12 +38,14 @@ export const SearchBar = memo(({
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         className="
-          w-full pl-9 pr-8 py-2 text-sm
-          bg-slate-100 dark:bg-slate-800/60
-          border border-transparent focus:border-slate-200 dark:focus:border-slate-700
+          w-full pl-9 pr-8 py-2.5 text-sm
+          bg-slate-100/80 dark:bg-slate-800/60
+          border border-slate-200/50 dark:border-slate-800/80
+          focus:border-indigo-500 dark:focus:border-indigo-500
+          focus:ring-2 focus:ring-indigo-500/20
           text-slate-900 dark:text-slate-100
           placeholder-slate-400 dark:placeholder-slate-500
-          rounded-xl focus:outline-hidden
+          rounded-2xl focus:outline-hidden
           transition-all duration-200
         "
       />

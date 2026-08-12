@@ -2,27 +2,30 @@ package com.shiv.chat_bakend.service;
 
 
 
+import com.shiv.chat_bakend.dto.message.MessageEditReqDto;
 import com.shiv.chat_bakend.dto.message.MessageReadReqDto;
 import com.shiv.chat_bakend.dto.message.MessageReqDto;
 import com.shiv.chat_bakend.dto.message.MessageResDto;
+import com.shiv.chat_bakend.enums.MessageStatusEnum;
 import com.shiv.chat_bakend.mapper.MessageMapper;
-import com.shiv.chat_bakend.model.ConversationEn;
-import com.shiv.chat_bakend.model.MessageEn;
-import com.shiv.chat_bakend.model.UserEn;
-import com.shiv.chat_bakend.repository.ConversationRepo;
-import com.shiv.chat_bakend.repository.MessageRepo;
-import com.shiv.chat_bakend.repository.UserRep;
+import com.shiv.chat_bakend.model.*;
+import com.shiv.chat_bakend.repository.*;
 import jakarta.transaction.Transactional;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 
-import java.security.Principal;
+import java.time.Duration;
+import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @Service
 public class MessageSer {
@@ -36,13 +39,45 @@ public class MessageSer {
     private MessageDeliverySer deliverySer;
     @Autowired
     private CurrentUserSer currentUserSer;
-//    This is used to get the latest conversation messages
+    @Autowired
+    private ConversationVisibilityRepo conversationVisibilityRepo;
+    @Autowired
+    private MessageVisibilityRepo messageVisibilityRepo;
+    @Autowired
+    private NotificationServ notificationServ;
+    @Autowired
+    private UserBlockSer userBlockSer;
+    @Autowired
+    private MessageDeliveryRepo messageDeliveryRepo;
+
+    //    This is used to get the latest conversation messages
     public ResponseEntity<?> getLatestConversationMessages(MessageReadReqDto reqDto, Pageable pageable){
-        if(reqDto==null )return ResponseEntity.badRequest().body("Conversation Id is not valid");
+        String userId=currentUserSer.getUserId();
+        if(reqDto==null || reqDto.getConversationId()==null )return ResponseEntity.badRequest().body("Conversation Id is not valid");
         System.out.println("Fetching the latest messages of conversation if L- "+reqDto.getConversationId());
+        Optional<ConversationVisibilityEn> conversationVisibilityEn=conversationVisibilityRepo.findClearConversation(reqDto.getConversationId(),userId);
+        LocalDateTime clearedAt=null;
+        if(conversationVisibilityEn.isPresent())clearedAt=conversationVisibilityEn.get().getClearedAt();
+        Set<Long> deletedMessageIds=messageVisibilityRepo.findDeletedMessageIds(userId, reqDto.getConversationId(),clearedAt);
         Long conversationId=reqDto.getConversationId();
-        Page<MessageEn> messageEns=messageRepo.findByConversation_IdOrderBySentAtDesc(conversationId,pageable);
-        Page<MessageResDto> messages=messageEns.map(msg->MessageMapper.toMessageResDto(msg));
+        Page<MessageEn> messageEns;
+        if(deletedMessageIds.isEmpty()) messageEns=messageRepo.findMessagesOfConversation(conversationId,clearedAt,userId,pageable);
+        else messageEns=messageRepo.findMessagesOfConversationWithDeleted(conversationId,clearedAt,deletedMessageIds,userId,pageable);
+        List<MessageDeliveryEn> outGoingMessageDeliveryEn = List.of();
+        Set<Long> outGoingMessageIds=messageEns.stream()
+                .filter(msg -> msg.getSender().getUserId().equals(userId))
+                .map(msg -> msg.getId())
+                .collect(Collectors.toSet());
+        if(!outGoingMessageIds.isEmpty()){
+            outGoingMessageDeliveryEn=messageDeliveryRepo.findByMessage_IdIn(outGoingMessageIds);
+        }
+        Map<Long, MessageStatusEnum> messageStatusMap =outGoingMessageDeliveryEn.stream()
+                .collect(Collectors.toMap(
+                        delivery -> delivery.getMessage().getId(),
+                         MessageDeliveryEn::getStatus
+                ));
+        Page<MessageResDto> messages=messageEns.map(msg->MessageMapper.toMessageResDto(msg,messageStatusMap.get(msg.getId())));
+
         return ResponseEntity.ok(messages);
     }
 //    This method is used to manage the message flow
@@ -51,7 +86,7 @@ public class MessageSer {
 //    :- to transfer the message
 //    :- to create the message in db
     @Transactional
-    public MessageResDto sendMessage(MessageReqDto messageReqDto,String senderId){
+    public MessageResDto sendMessage(MessageReqDto messageReqDto,String senderId,boolean isBlocked){
         System.out.println("Sending the message user id is from Send Message :- "+senderId);
         if(messageReqDto==null || senderId==null || senderId.isBlank())throw new RuntimeException("Message Request is not valid");
         Optional<UserEn> sender=userRep.findByUserIdAndIsActiveTrueAndDeletedFalse(senderId);
@@ -70,11 +105,74 @@ public class MessageSer {
         ConversationEn conversationEn=conversationRepo.findByUserOne_UserIdAndUserTwo_UserId(firstUser,secondUser).orElseThrow();
         MessageEn messageEn = MessageMapper.toMessageEn(messageReqDto,sender.get(),receiver.get(),conversationEn);
         MessageEn savedMessageEn=messageRepo.save(messageEn);
-        conversationEn.setLastMessageAt(savedMessageEn.getSentAt());
-        conversationRepo.save(conversationEn);
-        deliverySer.createDelivery(savedMessageEn);
-        MessageResDto messageResDto=MessageMapper.toMessageResDto(savedMessageEn);
+        if(!isBlocked){
+            conversationEn.setLastMessageAt(savedMessageEn.getSentAt());
+            conversationRepo.save(conversationEn);
+        }
+        deliverySer.createDelivery(savedMessageEn,isBlocked);
+        MessageResDto messageResDto=MessageMapper.toMessageResDto(savedMessageEn,isBlocked?MessageStatusEnum.BLOCKED : MessageStatusEnum.SENT);
         return messageResDto;
+    }
+
+    @Transactional
+    public ResponseEntity<?> editMessage(MessageEditReqDto editReqDto){
+        if(editReqDto==null)return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("Edit request is not valid");
+        String userId=currentUserSer.getUserId();
+        MessageEn messageEn=messageRepo.findAuthorizedMessageForSender(userId,editReqDto.getMessageId())
+                .orElseThrow(()->new RuntimeException("Message id is not correct or not authorized"));
+        Long conversationId=messageEn.getConversation().getId();
+        String receiverID=messageEn.getReceiver().getUserId();
+        boolean isDeleted= isDeletedFromBothSide(messageEn);
+        if(isDeleted)return ResponseEntity.badRequest().body("Message already deleted");
+        boolean isEditable=isEditable(messageEn);
+        if(!isEditable)return ResponseEntity.badRequest().body("Message edit window expired");
+        boolean isAlreadyDeleted=checkDeleteFromMySide(messageEn,conversationId,userId);
+        if (isAlreadyDeleted)return ResponseEntity.badRequest().body("Message already deleted");
+        if(messageEn.getOriginalContent()==null || messageEn.getOriginalContent().isEmpty()){
+            messageEn.setOriginalContent(messageEn.getContent());
+        }
+        LocalDateTime editTime=LocalDateTime.now();
+        messageEn.setEditedAt(editTime);
+        messageEn.setContent(editReqDto.getNewContent());
+        messageEn.setEdited(true);
+        notificationServ.notifyMessageEdit(editReqDto,receiverID,conversationId,editTime);
+        return ResponseEntity.ok("Message Updated Successfully");
+
+    }
+    //    Delete from everyone
+    @Transactional
+    public ResponseEntity<?> deleteFromEveryOne(Long messageId){
+        if(messageId==null || messageId <=0)return ResponseEntity.badRequest().body("Message id is not correct");
+        String currUser=currentUserSer.getUserId();
+        Optional<MessageEn> messageEn=messageRepo.findAuthorizedMessageForSender(currUser,messageId);
+        if(messageEn.isEmpty())return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("Message id not correct or not authorize");
+        boolean isDeleted= isDeletedFromBothSide(messageEn.get());
+        String receiverId=messageEn.get().getReceiver().getUserId();
+        Long conversationId=messageEn.get().getConversation().getId();
+        if(isDeleted)return ResponseEntity.badRequest().body("Message already deleted...");
+        boolean isEditable=isEditable(messageEn.get());
+        if(!isEditable)return ResponseEntity.ok().body("Message cannot be deleted");
+        LocalDateTime deleteTime=LocalDateTime.now();
+        messageEn.get().setDeletedAt(deleteTime);
+        messageEn.get().setDeletedForEveryOne(true);
+        messageEn.get().setOriginalContent(messageEn.get().getContent());
+        messageEn.get().setContent("This message was deleted.");
+        notificationServ.notifyMessageDelete(messageId,receiverId,conversationId,deleteTime);
+        return ResponseEntity.ok("Message Deleted Successfully");
+    }
+    //    This method is to check that message is not already deleted
+    private boolean isDeletedFromBothSide(MessageEn messageEn){
+        return messageEn.isDeletedForEveryOne();
+    }
+    //    This method is used to check that message is editable or not
+    private boolean isEditable(MessageEn messageEn){return (Duration.between(messageEn.getSentAt(),LocalDateTime.now()).toMinutes() <= 30);}
+
+//    This service is used to check that is message DeletedFrom my side or did clear chat
+    private boolean checkDeleteFromMySide(MessageEn messageEn,Long conversationId, String userId){
+        boolean isAlreadyDeleted=messageVisibilityRepo.checkIsDeleted(userId,messageEn.getId());
+        if(isAlreadyDeleted)return true;
+        boolean isClearedBefore=conversationVisibilityRepo.checkIsMessageCleared(conversationId,userId,messageEn.getSentAt()).orElse(false);
+        return isClearedBefore;
     }
 
 }

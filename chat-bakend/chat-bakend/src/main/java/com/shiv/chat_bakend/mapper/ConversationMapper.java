@@ -27,13 +27,14 @@ public class ConversationMapper {
         return conversationEn;
     }
 
-    public static ConversationSummaryResDto toConversationResSummary(ConversationEn conversationEn, UserResDto userResDto, String lastMessage, Long unreadMessage){
+    public static ConversationSummaryResDto toConversationResSummary(ConversationEn conversationEn, UserResDto userResDto, String lastMessage, Long unreadMessage,LocalDateTime lastMessageTime,boolean isOtherUserBlocked){
         ConversationSummaryResDto conversationSummaryResDto=new ConversationSummaryResDto();
         conversationSummaryResDto.setConversationId(conversationEn.getId());
         conversationSummaryResDto.setReceiver(userResDto);
         conversationSummaryResDto.setLastMessage(lastMessage);
-        conversationSummaryResDto.setLastMessageTime(conversationEn.getLastMessageAt());
+        conversationSummaryResDto.setLastMessageTime(lastMessageTime);
         conversationSummaryResDto.setUnreadCount(unreadMessage);
+        conversationSummaryResDto.setOtherUserBlocked(isOtherUserBlocked);
         return conversationSummaryResDto;
     }
 }

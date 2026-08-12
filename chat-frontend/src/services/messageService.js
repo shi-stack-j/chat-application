@@ -13,10 +13,11 @@ class MessageService {
   getLatestMessages = async (conversationId, page = 0, size = 20) => {
     try {
       console.log("Conversation ID is :- ", conversationId);
-      return await apiClient.post(
+      let res=await apiClient.post(
         `/messages/get/latestMessages?page=${page}&size=${size}&sort=sentAt,desc`,
-        { conversationId }
-      );
+        { conversationId } );
+        console.log("Message response is :- ",res);
+      return res;
     } catch (error) {
       console.error(`Get Latest Messages API Error for ID ${conversationId}:`, error);
       throw error;
@@ -96,6 +97,7 @@ class MessageService {
         {
           receiver: message.receiver,
           content: message.content,
+          tempMessageId: message.tempMessageId || message.id,
           sendAt: null // Set automatically by backend
         },
         {
@@ -107,6 +109,63 @@ class MessageService {
       );
     } catch (error) {
       console.error('Send Message Fallback API Error:', error);
+      throw error;
+    }
+  };
+
+  /**
+   * Edits content of an existing message sent within 30 minutes.
+   * PUT /messages/edit
+   * 
+   * @param {number} messageId 
+   * @param {string} newContent 
+   * @returns {Promise<string>} Status message
+   */
+  editMessage = async (messageId, newContent) => {
+    try {
+      console.log(`Editing message ID ${messageId} with new content: ${newContent}`);
+      return await apiClient.put('/messages/edit', {
+        messageId: Number(messageId),
+        newContent
+      });
+    } catch (error) {
+      console.error(`Edit Message API Error for ID ${messageId}:`, error);
+      throw error;
+    }
+  };
+
+  /**
+   * Deletes a message for everyone within 30 minutes.
+   * DELETE /messages/{messageId}/delete-for-everyone
+   * 
+   * @param {number} messageId 
+   * @returns {Promise<string>} Status message
+   */
+  deleteForEveryone = async (messageId) => {
+    try {
+      return await apiClient.delete(`/messages/${messageId}/delete-for-everyone`);
+    } catch (error) {
+      console.error(`Delete For Everyone API Error for ID ${messageId}:`, error);
+      throw error;
+    }
+  };
+
+  /**
+   * Deletes one or more messages only for the current user.
+   * DELETE /delete-for-me
+   * 
+   * @param {Array<number>|number} messageIds 
+   * @returns {Promise<string>} Status message
+   */
+  deleteForMe = async (messageIds) => {
+    try {
+      const ids = Array.isArray(messageIds) ? messageIds : [messageIds];
+      return await apiClient.delete('/delete-for-me', {
+        body: JSON.stringify({ deleteMessageIds: ids.map(Number) }),
+        headers: { 'Content-Type': 'application/json' }
+      });
+    } catch (error) {
+      console.error('Delete For Me API Error:', error);
       throw error;
     }
   };

@@ -26,4 +26,5 @@ public class ConversationSummaryResDto {
     private String lastMessage;
     private LocalDateTime lastMessageTime;
     private Long unreadCount=0L;
+    private boolean isOtherUserBlocked;
 }

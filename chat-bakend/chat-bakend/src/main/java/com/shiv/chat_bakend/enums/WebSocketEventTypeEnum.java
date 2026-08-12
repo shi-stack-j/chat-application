@@ -4,5 +4,7 @@ public enum WebSocketEventTypeEnum {
     USER_ONLINE,
     USER_OFFLINE,
     USER_MESSAGE,
-    USER_TYPING
+    USER_TYPING,
+    MESSAGE_DELETED,
+    MESSAGE_EDITED
 }

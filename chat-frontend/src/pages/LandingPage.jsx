@@ -126,8 +126,13 @@ export const LandingPage = () => {
         // Navigate to the secure chat portal
         navigate('/chat');
       } catch (error) {
-        toastHelper.error(error.message || 'Login failed. Please check your credentials.');
-        toastHelper.connection.error(error.message || 'Authentication handshake failed.');
+        const errMsg = error.message || '';
+        if (errMsg.toLowerCase().includes('already loggedin') || errMsg.toLowerCase().includes('logout first')) {
+          toastHelper.error('User is already logged in on another device or tab. Please log out from existing session first.');
+        } else {
+          toastHelper.error(errMsg || 'Login failed. Please check your credentials.');
+        }
+        toastHelper.connection.error(errMsg || 'Authentication handshake failed.');
       } finally {
         dispatch(setGlobalLoading(false));
       }
@@ -158,17 +163,17 @@ export const LandingPage = () => {
           {/* Logo Section */}
           <div className="flex flex-col items-center text-center mb-6">
             <div className="
-              w-14 h-14 rounded-2xl bg-gradient-to-tr from-indigo-500 via-indigo-650 to-purple-650
+              w-14 h-14 rounded-2xl bg-gradient-to-tr from-indigo-600 via-indigo-500 to-violet-600
               flex items-center justify-center text-white shadow-[0_4px_20px_rgba(99,102,241,0.35)] mb-4
             ">
               <svg className="w-8 h-8 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
               </svg>
             </div>
-            <h1 className="text-2xl font-extrabold tracking-tight bg-gradient-to-r from-slate-900 via-slate-850 to-indigo-900 dark:from-white dark:via-slate-200 dark:to-indigo-200 bg-clip-text text-transparent">
+            <h1 className="text-2xl font-extrabold tracking-tight bg-gradient-to-r from-slate-900 via-indigo-950 to-indigo-700 dark:from-white dark:via-slate-200 dark:to-indigo-200 bg-clip-text text-transparent">
               {isRegistering ? 'Create Account' : 'Welcome Back'}
             </h1>
-            <p className="text-xs text-slate-400 dark:text-slate-500 mt-1 max-w-[260px]">
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-[260px] font-medium leading-relaxed">
               {isRegistering
                 ? 'Join ChatApp workspace by creating your profile credentials.'
                 : 'Enter your credentials to access the secure chat workspace.'}
@@ -201,10 +206,10 @@ export const LandingPage = () => {
                   required
                   className="
                     w-full pl-10 pr-4 py-3 text-sm
-                    bg-slate-50/50 dark:bg-slate-950/50
-                    border border-slate-200/80 dark:border-slate-800/80
-                    focus:border-indigo-500 dark:focus:border-indigo-500/80
-                    focus:ring-2 focus:ring-indigo-500/10
+                    bg-slate-50/70 dark:bg-slate-950/60
+                    border border-slate-200 dark:border-slate-800
+                    focus:border-indigo-500 dark:focus:border-indigo-500
+                    focus:ring-2 focus:ring-indigo-500/20
                     text-slate-900 dark:text-slate-100
                     placeholder-slate-400 dark:placeholder-slate-500
                     rounded-2xl focus:outline-hidden
@@ -237,10 +242,10 @@ export const LandingPage = () => {
                   required
                   className="
                     w-full pl-10 pr-4 py-3 text-sm
-                    bg-slate-50/50 dark:bg-slate-950/50
-                    border border-slate-200/80 dark:border-slate-800/80
-                    focus:border-indigo-500 dark:focus:border-indigo-500/80
-                    focus:ring-2 focus:ring-indigo-500/10
+                    bg-slate-50/70 dark:bg-slate-950/60
+                    border border-slate-200 dark:border-slate-800
+                    focus:border-indigo-500 dark:focus:border-indigo-500
+                    focus:ring-2 focus:ring-indigo-500/20
                     text-slate-900 dark:text-slate-100
                     placeholder-slate-400 dark:placeholder-slate-500
                     rounded-2xl focus:outline-hidden
@@ -276,10 +281,10 @@ export const LandingPage = () => {
                       required
                       className="
                         w-full pl-10 pr-4 py-3 text-sm
-                        bg-slate-50/50 dark:bg-slate-950/50
-                        border border-slate-200/80 dark:border-slate-800/80
-                        focus:border-indigo-500 dark:focus:border-indigo-500/80
-                        focus:ring-2 focus:ring-indigo-500/10
+                        bg-slate-50/70 dark:bg-slate-950/60
+                        border border-slate-200 dark:border-slate-800
+                        focus:border-indigo-500 dark:focus:border-indigo-500
+                        focus:ring-2 focus:ring-indigo-500/20
                         text-slate-900 dark:text-slate-100
                         placeholder-slate-400 dark:placeholder-slate-500
                         rounded-2xl focus:outline-hidden
@@ -296,8 +301,8 @@ export const LandingPage = () => {
               type="submit"
               className="
                 w-full py-3.5 rounded-2xl font-semibold text-sm cursor-pointer mt-4
-                bg-gradient-to-r from-indigo-650 to-purple-650 hover:from-indigo-600 hover:to-purple-600
-                text-white shadow-lg shadow-indigo-500/20 hover:shadow-indigo-500/35
+                bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500
+                text-white shadow-lg shadow-indigo-500/25 hover:shadow-indigo-500/40
                 active:scale-98 transform hover:-translate-y-0.5 active:translate-y-0
                 transition-all duration-200 flex items-center justify-center gap-2
               "
@@ -316,7 +321,7 @@ export const LandingPage = () => {
                   setIsRegistering(!isRegistering);
                   setPassword('');
                 }}
-                className="text-xs text-indigo-650 hover:text-indigo-550 dark:text-indigo-400 dark:hover:text-indigo-300 font-bold cursor-pointer underline decoration-dotted transition-colors duration-200"
+                className="text-xs text-indigo-600 hover:text-indigo-500 dark:text-indigo-400 dark:hover:text-indigo-300 font-bold cursor-pointer underline decoration-dotted transition-colors duration-200"
               >
                 {isRegistering
                   ? 'Already have an account? Sign In here'

@@ -1,5 +1,6 @@
 package com.shiv.chat_bakend.dto.message;
 
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -17,7 +18,10 @@ import java.time.LocalDateTime;
 public class MessageReqDto {
     @Size(min = 3 , message = "Size must be greater then 3 ")
     private String receiver;
+    @NotNull
     private String content;
+    @NotNull
+    private String tempMessageId;
     @CreationTimestamp
     private LocalDateTime sendAt;
 }

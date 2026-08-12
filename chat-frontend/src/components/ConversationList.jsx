@@ -1,5 +1,5 @@
 import { useSelector, useDispatch } from 'react-redux';
-import { selectSearchQuery, selectOnlineUsers, setSelectedChat, setSearchQuery } from '../features/chat/chatSlice';
+import { selectSearchQuery, selectOnlineUsers, selectBlockedUsers, setSelectedChat, setSearchQuery } from '../features/chat/chatSlice';
 import useChat from '../hooks/useChat';
 import ConversationItem from './ConversationItem';
 import { SidebarSkeleton } from './SkeletonLoader';
@@ -18,6 +18,7 @@ export const ConversationList = () => {
   const { conversationList, startConversation, loadingConversations } = useChat();
   const searchQuery = useSelector(selectSearchQuery);
   const onlineUsers = useSelector(selectOnlineUsers);
+  const blockedUsers = useSelector(selectBlockedUsers) || [];
   const currentUserId = useSelector(selectCurrentUserId);
 
   // 1. Filter list based on search query matching receiver's userId or nickname
@@ -114,7 +115,8 @@ export const ConversationList = () => {
           const lastMessagePayload = c.lastMessage 
             ? { content: c.lastMessage, timestamp: c.lastMessageTime } 
             : null;
-          const isOnline = onlineUsers.some(id => id.toLowerCase() === c.receiver.userId.toLowerCase()) || c.receiver.isOnline || c.receiver.online;
+          const isBlocked = blockedUsers.some(id => id.toLowerCase() === c.receiver.userId.toLowerCase()) || !!(c.isOtherUserBlocked || c.otherUserBlocked);
+          const isOnline = !isBlocked && (onlineUsers.some(id => id.toLowerCase() === c.receiver.userId.toLowerCase()) || c.receiver.isOnline || c.receiver.online);
 
           return (
             <ConversationItem

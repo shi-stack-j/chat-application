@@ -57,6 +57,22 @@ class ConversationService {
       throw error;
     }
   };
+
+  /**
+   * Clears all messages in a conversation for the current user.
+   * POST /{conversationId}/clear
+   * 
+   * @param {number} conversationId 
+   * @returns {Promise<string>} Success message
+   */
+  clearConversation = async (conversationId) => {
+    try {
+      return await apiClient.post(`/${conversationId}/clear`);
+    } catch (error) {
+      console.error(`Clear Conversation API Error for ${conversationId}:`, error);
+      throw error;
+    }
+  };
 }
 
 const conversationService = new ConversationService();

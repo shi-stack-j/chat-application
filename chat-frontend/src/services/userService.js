@@ -65,6 +65,37 @@ class UserService {
       throw error;
     }
   };
+  /**
+   * Blocks a target user by ID.
+   * POST /userBlock/{blockedUserId}
+   * 
+   * @param {string} blockedUserId 
+   * @returns {Promise<string>} Status message
+   */
+  blockUser = async (blockedUserId) => {
+    try {
+      return await apiClient.post(`/userBlock/${blockedUserId}`);
+    } catch (error) {
+      console.error(`Block User API Error for ${blockedUserId}:`, error);
+      throw error;
+    }
+  };
+
+  /**
+   * Unblocks a target user by ID.
+   * DELETE /userBlock/{blockedUserId}
+   * 
+   * @param {string} blockedUserId 
+   * @returns {Promise<string>} Status message
+   */
+  unblockUser = async (blockedUserId) => {
+    try {
+      return await apiClient.delete(`/userBlock/${blockedUserId}`);
+    } catch (error) {
+      console.error(`Unblock User API Error for ${blockedUserId}:`, error);
+      throw error;
+    }
+  };
 }
 
 const userService = new UserService();
