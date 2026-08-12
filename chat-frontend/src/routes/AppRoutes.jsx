@@ -49,8 +49,7 @@ export const AppRoutes = () => {
   }, [theme]);
 
   return (
-    <>
-      {/* Overlay spinner triggered when global UI state requests blockages */}
+    <div className="h-full">
       {isGlobalLoading && <Loader />}
       
       <Routes>
@@ -70,7 +69,7 @@ export const AppRoutes = () => {
         {/* Fallback route */}
         <Route path="*" element={<NotFoundPage />} />
       </Routes>
-    </>
+    </div>
   );
 };
 

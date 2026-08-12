@@ -1,14 +1,9 @@
-import { useState, useRef, memo } from 'react';
+import { useState, useRef, memo, useEffect } from 'react';
 import { useSelector } from 'react-redux';
 import { selectBlockedUsers } from '../features/chat/chatSlice';
 import useChat from '../hooks/useChat';
 import toastHelper from '../utils/toastHelper';
 
-/**
- * REUSABLE MESSAGE INPUT COMPONENT
- * 
- * Provides input messaging capabilities. Wrapped in React.memo.
- */
 export const MessageInput = memo(({ onSendMessage, chatUserId, onTypingStatusChange }) => {
   const [messageText, setMessageText] = useState('');
   const inputRef = useRef(null);
@@ -18,6 +13,17 @@ export const MessageInput = memo(({ onSendMessage, chatUserId, onTypingStatusCha
   const blockedUsers = useSelector(selectBlockedUsers) || [];
   const { unblockUser } = useChat();
   const isBlocked = blockedUsers.some(id => id.toLowerCase() === chatUserId?.toLowerCase());
+
+  const resizeField = () => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, 128)}px`;
+  };
+
+  useEffect(() => {
+    resizeField();
+  }, [messageText]);
 
   const handleInputChange = (e) => {
     const val = e.target.value;
@@ -49,8 +55,7 @@ export const MessageInput = memo(({ onSendMessage, chatUserId, onTypingStatusCha
     }
   };
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
+  const submitText = () => {
     const cleanText = messageText.trim();
     if (!cleanText) return;
 
@@ -64,19 +69,32 @@ export const MessageInput = memo(({ onSendMessage, chatUserId, onTypingStatusCha
 
     onSendMessage(cleanText);
     setMessageText('');
-    inputRef.current?.focus();
+    requestAnimationFrame(() => inputRef.current?.focus());
+  };
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    submitText();
+  };
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      submitText();
+    }
   };
 
   if (isBlocked) {
     return (
-      <div className="p-3.5 bg-red-50/70 dark:bg-red-950/30 border-t border-red-200 dark:border-red-900/50 flex items-center justify-between gap-3 text-xs text-red-600 dark:text-red-400 font-medium z-10">
-        <div className="flex items-center gap-2">
-          <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <div className="px-3 sm:px-4 py-3 bg-app-error/10 border-t border-app-error/20 flex items-center justify-between gap-3 text-sm text-app-error z-10">
+        <div className="flex items-center gap-2 min-w-0">
+          <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
           </svg>
-          <span>You have blocked {chatUserId}. Unblock to resume messaging.</span>
+          <span className="truncate">You blocked {chatUserId}. Unblock to resume messaging.</span>
         </div>
         <button
+          type="button"
           onClick={async () => {
             try {
               await unblockUser(chatUserId);
@@ -85,7 +103,7 @@ export const MessageInput = memo(({ onSendMessage, chatUserId, onTypingStatusCha
               toastHelper.error(err.message || `Failed to unblock ${chatUserId}`);
             }
           }}
-          className="px-3 py-1.5 rounded-xl bg-red-600 hover:bg-red-500 text-white font-semibold cursor-pointer shadow-xs shrink-0 transition-all"
+          className="px-3 py-1.5 rounded-lg bg-app-error hover:brightness-110 text-white text-xs font-semibold cursor-pointer shrink-0"
         >
           Unblock
         </button>
@@ -93,64 +111,52 @@ export const MessageInput = memo(({ onSendMessage, chatUserId, onTypingStatusCha
     );
   }
 
+  const canSend = Boolean(messageText.trim());
+
   return (
-    <form 
+    <form
       onSubmit={handleSubmit}
-      className="
-        p-3.5 bg-white dark:bg-slate-900 
-        border-t border-slate-200 dark:border-slate-800/80
-        flex items-center gap-2.5 z-10
-      "
+      className="px-3 sm:px-4 py-3 bg-app-surface border-t border-app-border flex items-end gap-2 z-10"
     >
-      <input
+      <label className="sr-only" htmlFor="message-composer">Message</label>
+      <textarea
+        id="message-composer"
         ref={inputRef}
-        type="text"
+        rows={1}
         value={messageText}
         onChange={handleInputChange}
-        placeholder={`Message ${chatUserId}...`}
+        onKeyDown={handleKeyDown}
+        placeholder={`Message ${chatUserId}…`}
         autoFocus
         className="
-          flex-1 px-4 py-3 text-sm
-          bg-slate-50/80 dark:bg-slate-800/60
-          border border-slate-200 dark:border-slate-800
-          focus:border-indigo-500 dark:focus:border-indigo-500
-          focus:ring-2 focus:ring-indigo-500/20
-          text-slate-900 dark:text-slate-100
-          placeholder-slate-400 dark:placeholder-slate-500
-          rounded-2xl focus:outline-hidden
-          transition-all duration-200
+          flex-1 min-h-11 max-h-32 px-3.5 py-2.5 text-sm leading-5
+          bg-app-bg border border-app-border
+          focus:border-app-primary focus:ring-2 focus:ring-app-primary/20
+          text-app-text placeholder:text-app-muted
+          rounded-xl outline-none resize-none
+          transition-colors duration-150
         "
       />
 
       <button
         type="submit"
-        disabled={!messageText.trim()}
+        disabled={!canSend}
+        aria-label="Send message"
+        title="Send message"
         className={`
-          p-3 rounded-2xl flex items-center justify-center cursor-pointer
-          transition-all duration-200 select-none shrink-0
-          ${
-            messageText.trim() 
-              ? 'bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white shadow-md hover:shadow-indigo-500/25 active:scale-95' 
-              : 'bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-600 cursor-not-allowed border border-slate-200/50 dark:border-slate-800/50'
+          h-11 w-11 rounded-xl flex items-center justify-center shrink-0
+          transition-colors duration-150
+          focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-app-primary
+          ${canSend
+            ? 'bg-app-primary hover:bg-app-primary-hover text-white dark:text-slate-950 cursor-pointer'
+            : 'bg-app-bg text-app-muted cursor-not-allowed'
           }
         `}
-        title="Send message"
       >
-        <svg 
-          className="w-5 h-5 transform rotate-45 -translate-x-0.5 translate-y-0.5" 
-          fill="none" 
-          stroke="currentColor" 
-          viewBox="0 0 24 24"
-        >
-          <path 
-            strokeLinecap="round" 
-            strokeLinejoin="round" 
-            strokeWidth="2.5" 
-            d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" 
-          />
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.2" d="M5 12h14M12 5l7 7-7 7" />
         </svg>
       </button>
-
     </form>
   );
 });

@@ -4,19 +4,14 @@ import { setSelectedChat, selectSelectedChatUserId } from '../features/chat/chat
 import { setSidebarOpen } from '../features/ui/uiSlice';
 import UserAvatar from './UserAvatar';
 
-/**
- * REUSABLE CONVERSATION ITEM COMPONENT
- * 
- * Renders a single conversation slot in the sidebar list.
- * Wrapped in React.memo with a custom comparator to prevent duplicate sidebar list rendering.
- */
 export const ConversationItem = memo(({
   chatUserId,
   nickName,
   avatarUrl,
   lastMessage,
   unreadCount = 0,
-  isOnline = false
+  isOnline = false,
+  isBlocked = false
 }) => {
   const dispatch = useDispatch();
   const selectedChatUserId = useSelector(selectSelectedChatUserId);
@@ -25,10 +20,9 @@ export const ConversationItem = memo(({
 
   const handleSelect = () => {
     dispatch(setSelectedChat(chatUserId));
-    dispatch(setSidebarOpen(false)); // Close drawer layout on mobile
+    dispatch(setSidebarOpen(false));
   };
 
-  // Helper to format the message timestamp in sidebar
   const formatTime = (timeInput) => {
     if (!timeInput) return '';
     try {
@@ -44,61 +38,60 @@ export const ConversationItem = memo(({
     }
   };
 
+  const displayName = nickName || chatUserId;
+
   return (
     <button
       onClick={handleSelect}
       className={`
-        w-full p-3.5 flex items-center gap-3.5 
-        text-left select-none border-b border-slate-100 dark:border-slate-800/40
-        transition-all duration-200 cursor-pointer relative
+        w-full px-3 sm:px-3.5 py-2.5 flex items-center gap-3
+        text-left select-none cursor-pointer relative
+        transition-colors duration-150
         ${isSelected
-          ? 'bg-indigo-50/80 dark:bg-indigo-950/40 border-l-4 border-l-indigo-600 dark:border-l-indigo-500'
-          : 'hover:bg-slate-50 dark:hover:bg-slate-800/40 bg-transparent border-l-4 border-l-transparent'
+          ? 'bg-app-primary-soft'
+          : 'hover:bg-app-bg dark:hover:bg-white/4'
         }
       `}
     >
-      {/* Avatar with custom image fallback */}
+      {isSelected && (
+        <span className="absolute left-0 top-2 bottom-2 w-[3px] rounded-r-full bg-app-primary" />
+      )}
+
       <UserAvatar
         userId={chatUserId}
         imageUrl={avatarUrl}
         size="md"
-        showStatus={true}
+        showStatus={!isBlocked}
         isOnline={isOnline}
       />
 
-      {/* Content wrapper */}
-      <div className="flex-1 min-w-0 flex flex-col justify-between h-10">
-
-        {/* Name and Time */}
-        <div className="flex items-center justify-between">
-          <span className={`text-sm truncate ${isSelected ? 'font-semibold text-indigo-600 dark:text-indigo-400' : 'font-medium text-slate-800 dark:text-slate-100'}`}>
-            {nickName || chatUserId}
+      <div className="flex-1 min-w-0 flex flex-col justify-center gap-0.5">
+        <div className="flex items-center justify-between gap-2 min-w-0">
+          <span
+            className={`text-sm truncate ${isSelected ? 'font-semibold text-app-text' : 'font-medium text-app-text'}`}
+            title={displayName}
+          >
+            {displayName}
           </span>
-          <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium shrink-0">
+          <span className={`text-[11px] shrink-0 tabular-nums ${unreadCount > 0 ? 'text-app-primary font-semibold' : 'text-app-muted'}`}>
             {lastMessage ? formatTime(lastMessage.timestamp) : ''}
           </span>
         </div>
 
-        {/* Message preview and unread badge */}
-        <div className="flex items-center justify-between gap-2">
-
-          {/* Last message content snippet */}
-          <p className="text-xs text-slate-500 dark:text-slate-400 truncate flex-1 pr-1 leading-normal font-normal">
-            {lastMessage ? lastMessage.content : 'No messages in this chat'}
+        <div className="flex items-center justify-between gap-2 min-w-0">
+          <p className={`text-xs truncate flex-1 leading-snug ${unreadCount > 0 ? 'text-app-text font-medium' : 'text-app-muted'}`}>
+            {isBlocked
+              ? 'You blocked this user'
+              : lastMessage
+                ? lastMessage.content
+                : 'No messages yet'}
           </p>
-
-          {/* Unread badge */}
           {unreadCount > 0 && (
-            <span className="
-              min-w-5 h-5 px-1.5 flex items-center justify-center rounded-full
-              bg-indigo-600 dark:bg-indigo-500 text-white text-[10px] font-bold
-              animate-pulse shrink-0
-            ">
-              {unreadCount}
+            <span className="min-w-5 h-5 px-1.5 flex items-center justify-center rounded-full bg-app-primary text-white dark:text-slate-950 text-[10px] font-bold shrink-0">
+              {unreadCount > 99 ? '99+' : unreadCount}
             </span>
           )}
         </div>
-
       </div>
     </button>
   );
@@ -108,6 +101,7 @@ export const ConversationItem = memo(({
     prevProps.avatarUrl === nextProps.avatarUrl &&
     prevProps.unreadCount === nextProps.unreadCount &&
     prevProps.isOnline === nextProps.isOnline &&
+    prevProps.isBlocked === nextProps.isBlocked &&
     prevProps.lastMessage?.content === nextProps.lastMessage?.content &&
     prevProps.lastMessage?.timestamp === nextProps.lastMessage?.timestamp;
 });

@@ -7,68 +7,75 @@ import { MessageListSkeleton } from './SkeletonLoader';
 import {
   selectSelectedChatUserId,
   selectActiveMessages,
-  selectLoadingMessages
+  selectLoadingMessages,
+  selectTypingUsers
 } from '../features/chat/chatSlice';
 import { selectConnectionState } from '../features/websocket/websocketSlice';
 import useChat from '../hooks/useChat';
 
-/**
- * CHAT WINDOW PANEL COMPONENT
- * 
- * Manages the layout and rendering lifecycle of the active chat viewport.
- * Coordinates loading skeletons, connection status warnings, and layout streams.
- */
 export const ChatWindow = ({ onSendMessage }) => {
   const selectedChatUserId = useSelector(selectSelectedChatUserId);
   const activeMessages = useSelector(selectActiveMessages);
   const loadingMessages = useSelector(selectLoadingMessages);
   const connectionState = useSelector(selectConnectionState);
+  const typingUsers = useSelector(selectTypingUsers) || {};
+  const isPeerTyping = Boolean(typingUsers[selectedChatUserId?.toLowerCase()]);
   const { sendTypingStatus } = useChat();
 
-  // If no chat partner is selected, render a modern greeting empty state
   if (!selectedChatUserId) {
     return <EmptyState />;
   }
 
   return (
-    <div className="flex-1 h-full flex flex-col relative min-w-0 bg-white dark:bg-slate-900">
-      {/* Header bar showing recipient details */}
+    <div className="flex-1 h-full flex flex-col relative min-w-0 min-h-0 bg-app-surface">
       <ChatHeader chatUserId={selectedChatUserId} />
 
-      {/* 
-        WebSocket Connection Warning Banner
-        Triggers automatically when the connection is interrupted or establishing.
-      */}
       {connectionState !== 'connected' && (
         <div className={`
-          px-4 py-2 text-xs font-semibold select-none flex items-center gap-2 border-b
-          transition-all duration-300
+          px-4 py-2 text-xs font-medium select-none flex items-center gap-2 border-b
           ${connectionState === 'connecting'
-            ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20'
-            : 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20'
+            ? 'bg-amber-500/10 text-app-warning border-amber-500/15'
+            : 'bg-app-error/10 text-app-error border-app-error/15'
           }
         `}>
-          <span className={`w-1.5 h-1.5 rounded-full ${connectionState === 'connecting' ? 'bg-amber-500 animate-pulse' : 'bg-rose-500 animate-ping'}`} />
+          <span className={`w-1.5 h-1.5 rounded-full ${connectionState === 'connecting' ? 'bg-app-warning animate-pulse' : 'bg-app-error'}`} />
           <span>
             {connectionState === 'connecting'
-              ? 'Reconnecting to live server...'
-              : 'Connection offline. REST API fallback enabled.'}
+              ? 'Reconnecting to the live server…'
+              : 'Connection offline. REST fallback is enabled.'}
           </span>
         </div>
       )}
 
-      {/* 
-        Dynamic Message Feed:
-        Displays a pulsing skeleton loader when fetching message archives,
-        otherwise maps out the message bubble stream.
-      */}
       {loadingMessages ? (
         <MessageListSkeleton />
       ) : (
-        <MessageList messages={activeMessages} chatUserId={selectedChatUserId} />
+        <MessageList
+          messages={activeMessages}
+          chatUserId={selectedChatUserId}
+          isPeerTyping={isPeerTyping}
+        />
       )}
 
-      {/* Typing input bar */}
+      <div
+        className="shrink-0 chat-canvas"
+        aria-live="polite"
+        aria-atomic="true"
+      >
+        {isPeerTyping && (
+          <div className="flex items-center gap-2 px-3 sm:px-5 h-10 select-none">
+            <div className="flex items-center gap-1.5 bg-app-incoming px-3 py-1.5 rounded-2xl rounded-bl-sm border border-app-border">
+              <span className="w-1.5 h-1.5 rounded-full bg-app-primary animate-bounce" style={{ animationDelay: '0ms' }} />
+              <span className="w-1.5 h-1.5 rounded-full bg-app-primary animate-bounce" style={{ animationDelay: '150ms' }} />
+              <span className="w-1.5 h-1.5 rounded-full bg-app-primary animate-bounce" style={{ animationDelay: '300ms' }} />
+              <span className="ml-1 text-[11px] font-medium text-app-muted truncate">
+                {selectedChatUserId} is typing
+              </span>
+            </div>
+          </div>
+        )}
+      </div>
+
       <MessageInput
         key={selectedChatUserId}
         onSendMessage={onSendMessage}

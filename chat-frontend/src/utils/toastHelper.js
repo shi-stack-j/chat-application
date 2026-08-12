@@ -36,12 +36,13 @@ import toast from 'react-hot-toast';
 
 const toastStyles = {
   style: {
-    background: '#1f2937', // Dark gray (matching slate-800)
-    color: '#f3f4f6', // Light gray text
+    background: '#172033',
+    color: '#f1f5f9',
     borderRadius: '12px',
-    border: '1px solid rgba(255, 255, 255, 0.08)',
-    boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.3), 0 4px 6px -2px rgba(0, 0, 0, 0.05)',
+    border: '1px solid #243044',
+    boxShadow: '0 10px 24px -8px rgba(0, 0, 0, 0.35)',
     fontSize: '0.875rem',
+    fontFamily: 'Inter, ui-sans-serif, system-ui, sans-serif',
   },
 };
 

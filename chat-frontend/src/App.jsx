@@ -18,26 +18,22 @@ import AppRoutes from './routes/AppRoutes';
  */
 function App() {
   return (
+    <div className="h-full">
     <Provider store={store}>
       <ChatProvider>
         <BrowserRouter>
-          {/* Application routing map */}
           <AppRoutes />
-          
-          {/* 
-            React Hot Toast Configuration
-            Positioned at bottom-right for desktop and top-center for mobile notifications.
-          */}
-          <Toaster 
-            position="bottom-right" 
+          <Toaster
+            position="bottom-right"
             toastOptions={{
               duration: 4000,
-              // Overridden by toastHelper custom styles
+              className: 'text-sm',
             }}
           />
         </BrowserRouter>
       </ChatProvider>
     </Provider>
+    </div>
   );
 }
 

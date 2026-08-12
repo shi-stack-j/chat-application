@@ -1,30 +1,24 @@
 import { useState } from 'react';
-import { useDispatch } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate } from 'react-router';
 import { setCurrentUser } from '../features/auth/authSlice';
-import { setGlobalLoading } from '../features/ui/uiSlice';
+import { setGlobalLoading, selectGlobalLoading, selectTheme, toggleTheme } from '../features/ui/uiSlice';
 import { setOnlineUsers } from '../features/chat/chatSlice';
 import toastHelper from '../utils/toastHelper';
 import authService from '../services/authService';
 import userService from '../services/userService';
 
-/**
- * LANDING PAGE COMPONENT
- * 
- * Secure entry portal offering toggleable forms for:
- * 1. User Sign In (Login with credentials)
- * 2. User Sign Up (Register with credentials, nickname required)
- */
 export const LandingPage = () => {
   const dispatch = useDispatch();
   const navigate = useNavigate();
+  const isLoading = useSelector(selectGlobalLoading);
+  const theme = useSelector(selectTheme);
 
   const [isRegistering, setIsRegistering] = useState(false);
   const [userId, setUserId] = useState('');
   const [password, setPassword] = useState('');
   const [nickName, setNickName] = useState('');
 
-  // Password validation helper: 8-20 characters, uppercase, lowercase, digit, and special char
   const validatePassword = (pass) => {
     const minLength = pass.length >= 8 && pass.length <= 20;
     const regex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&]).+$/;
@@ -63,19 +57,17 @@ export const LandingPage = () => {
         return;
       }
 
-      // ---------------- REGISTER FLOW ----------------
       try {
         const payload = {
           userId: cleanUserId,
           password: cleanPassword,
-          avatarUrl: null, // Avatar URL will be added/input later as requested
+          avatarUrl: null,
           nickName: cleanNickName
         };
 
         const responseText = await authService.register(payload);
         toastHelper.success(responseText || 'User Registered Successfully!');
 
-        // Clear fields and switch to login mode
         setIsRegistering(false);
         setPassword('');
         setNickName('');
@@ -85,7 +77,6 @@ export const LandingPage = () => {
         dispatch(setGlobalLoading(false));
       }
     } else {
-      // ---------------- LOGIN FLOW ----------------
       toastHelper.connection.connecting();
       try {
         const credentials = {
@@ -98,14 +89,11 @@ export const LandingPage = () => {
         if (!jwtToken) {
           throw new Error('No JWT token returned from authentication server.');
         }
-        
-        // Store JWT token in localStorage for WebSocket connection handshake and API calls
+
         localStorage.setItem('token', jwtToken);
 
-        // Fetch current user profile from backend using the newly acquired token
         const profile = await userService.getCurrentUser(jwtToken);
 
-        // Save active user profile in Redux store
         dispatch(
           setCurrentUser({
             userId: profile.userId,
@@ -115,15 +103,9 @@ export const LandingPage = () => {
           })
         );
 
-        // Volatile storage of plain password to bypass backend one-time token deletion on websocket reconnects
         sessionStorage.setItem('cached_password', cleanPassword);
-
-        // Reset list of online users
         dispatch(setOnlineUsers([]));
-
         toastHelper.connection.connected(profile.userId);
-
-        // Navigate to the secure chat portal
         navigate('/chat');
       } catch (error) {
         const errMsg = error.message || '';
@@ -139,136 +121,113 @@ export const LandingPage = () => {
     }
   };
 
+  const fieldClass = `
+    w-full pl-10 pr-4 h-11 text-sm
+    bg-app-bg border border-app-border
+    focus:border-app-primary focus:ring-2 focus:ring-app-primary/20
+    text-app-text placeholder:text-app-muted
+    rounded-xl outline-none
+    transition-colors duration-150
+  `;
+
   return (
-    <div className="relative w-screen min-h-screen flex flex-col justify-between p-6 bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-100 transition-colors duration-300 overflow-hidden">
-
-      {/* Background Decorative Gradient Blobs */}
-      <div className="absolute top-[-10%] left-[-10%] w-[300px] sm:w-[450px] h-[300px] sm:h-[450px] bg-indigo-500/10 dark:bg-indigo-500/20 rounded-full blur-[80px] sm:blur-[120px] pointer-events-none"></div>
-      <div className="absolute bottom-[-10%] right-[-10%] w-[300px] sm:w-[450px] h-[300px] sm:h-[450px] bg-purple-500/10 dark:bg-purple-500/20 rounded-full blur-[80px] sm:blur-[120px] pointer-events-none"></div>
-
-      {/* Build Header info */}
-      <header className="relative z-10 flex justify-end select-none">
-        <span className="text-xs font-semibold tracking-wider text-slate-400 dark:text-slate-500 uppercase">
-          Build v1.2.0
-        </span>
-      </header>
-
-      {/* Main portal entry card */}
-      <main className="relative z-10 w-full max-w-md mx-auto my-auto py-8">
-        <div className="
-          p-8 rounded-3xl bg-white/70 dark:bg-slate-900/70 backdrop-blur-xl
-          border border-slate-200/50 dark:border-slate-800/80
-          shadow-2xl transition-all duration-300
-        ">
-          {/* Logo Section */}
-          <div className="flex flex-col items-center text-center mb-6">
-            <div className="
-              w-14 h-14 rounded-2xl bg-gradient-to-tr from-indigo-600 via-indigo-500 to-violet-600
-              flex items-center justify-center text-white shadow-[0_4px_20px_rgba(99,102,241,0.35)] mb-4
-            ">
-              <svg className="w-8 h-8 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+    <div className="relative w-full h-full overflow-y-auto bg-app-bg text-app-text">
+      <div className="min-h-full flex flex-col px-4 py-6 sm:px-6">
+        <header className="flex items-center justify-between max-w-lg mx-auto w-full">
+          <div className="flex items-center gap-2.5">
+            <div className="h-8 w-8 rounded-lg bg-app-primary text-white dark:text-slate-950 flex items-center justify-center">
+              <svg className="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
               </svg>
             </div>
-            <h1 className="text-2xl font-extrabold tracking-tight bg-gradient-to-r from-slate-900 via-indigo-950 to-indigo-700 dark:from-white dark:via-slate-200 dark:to-indigo-200 bg-clip-text text-transparent">
-              {isRegistering ? 'Create Account' : 'Welcome Back'}
-            </h1>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-[260px] font-medium leading-relaxed">
-              {isRegistering
-                ? 'Join ChatApp workspace by creating your profile credentials.'
-                : 'Enter your credentials to access the secure chat workspace.'}
-            </p>
+            <span className="text-sm font-semibold tracking-tight">ChatApp</span>
           </div>
+          <button
+            type="button"
+            onClick={() => dispatch(toggleTheme())}
+            className="h-9 w-9 rounded-xl text-app-muted hover:bg-app-surface hover:text-app-text cursor-pointer inline-flex items-center justify-center"
+            aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+          >
+            {theme === 'dark' ? (
+              <svg className="w-5 h-5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364-6.364l-.707.707M6.343 17.657l-.707.707m0-12.728l.707.707m12.728 12.728l.707.707M12 8a4 4 0 100 8 4 4 0 000-8z" />
+              </svg>
+            ) : (
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+              </svg>
+            )}
+          </button>
+        </header>
 
-          {/* Form wrapper */}
-          <form onSubmit={handleAuthSubmit} className="space-y-4">
-
-            {/* User ID Field */}
-            <div>
-              <label
-                htmlFor="user-id"
-                className="block text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-1.5"
-              >
-                User ID
-              </label>
-              <div className="relative">
-                <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400 dark:text-slate-500">
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                  </svg>
-                </span>
-                <input
-                  id="user-id"
-                  type="text"
-                  value={userId}
-                  onChange={(e) => setUserId(e.target.value)}
-                  placeholder="e.g. shivam_99"
-                  required
-                  className="
-                    w-full pl-10 pr-4 py-3 text-sm
-                    bg-slate-50/70 dark:bg-slate-950/60
-                    border border-slate-200 dark:border-slate-800
-                    focus:border-indigo-500 dark:focus:border-indigo-500
-                    focus:ring-2 focus:ring-indigo-500/20
-                    text-slate-900 dark:text-slate-100
-                    placeholder-slate-400 dark:placeholder-slate-500
-                    rounded-2xl focus:outline-hidden
-                    transition-all duration-200
-                  "
-                />
-              </div>
+        <main className="flex-1 flex items-center justify-center py-8">
+          <div className="w-full max-w-md bg-app-surface border border-app-border rounded-2xl p-6 sm:p-8 shadow-sm">
+            <div className="mb-6">
+              <h1 className="text-xl font-semibold tracking-tight text-app-text">
+                {isRegistering ? 'Create your account' : 'Sign in'}
+              </h1>
+              <p className="text-sm text-app-muted mt-1.5 leading-relaxed">
+                {isRegistering
+                  ? 'Choose a user ID and password to join ChatApp.'
+                  : 'Enter your credentials to open your conversations.'}
+              </p>
             </div>
 
-            {/* Password Field */}
-            <div>
-              <label
-                htmlFor="password"
-                className="block text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-1.5"
-              >
-                Password
-              </label>
-              <div className="relative">
-                <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400 dark:text-slate-500">
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                  </svg>
-                </span>
-                <input
-                  id="password"
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  required
-                  className="
-                    w-full pl-10 pr-4 py-3 text-sm
-                    bg-slate-50/70 dark:bg-slate-950/60
-                    border border-slate-200 dark:border-slate-800
-                    focus:border-indigo-500 dark:focus:border-indigo-500
-                    focus:ring-2 focus:ring-indigo-500/20
-                    text-slate-900 dark:text-slate-100
-                    placeholder-slate-400 dark:placeholder-slate-500
-                    rounded-2xl focus:outline-hidden
-                    transition-all duration-200
-                  "
-                />
+            <form onSubmit={handleAuthSubmit} className="space-y-4">
+              <div>
+                <label htmlFor="user-id" className="block text-xs font-semibold text-app-muted mb-1.5">
+                  User ID
+                </label>
+                <div className="relative">
+                  <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-app-muted">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                    </svg>
+                  </span>
+                  <input
+                    id="user-id"
+                    type="text"
+                    autoComplete="username"
+                    value={userId}
+                    onChange={(e) => setUserId(e.target.value)}
+                    placeholder="your_user_id"
+                    required
+                    className={fieldClass}
+                  />
+                </div>
               </div>
-            </div>
 
-            {/* Registration-only fields */}
-            {isRegistering && (
-              <>
-                {/* Nickname Field */}
+              <div>
+                <label htmlFor="password" className="block text-xs font-semibold text-app-muted mb-1.5">
+                  Password
+                </label>
+                <div className="relative">
+                  <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-app-muted">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                    </svg>
+                  </span>
+                  <input
+                    id="password"
+                    type="password"
+                    autoComplete={isRegistering ? 'new-password' : 'current-password'}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="••••••••"
+                    required
+                    className={fieldClass}
+                  />
+                </div>
+              </div>
+
+              {isRegistering && (
                 <div>
-                  <label
-                    htmlFor="nickname"
-                    className="block text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-1.5"
-                  >
+                  <label htmlFor="nickname" className="block text-xs font-semibold text-app-muted mb-1.5">
                     Nickname
                   </label>
                   <div className="relative">
-                    <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400 dark:text-slate-500">
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-app-muted">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 7h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                       </svg>
                     </span>
@@ -277,65 +236,49 @@ export const LandingPage = () => {
                       type="text"
                       value={nickName}
                       onChange={(e) => setNickName(e.target.value)}
-                      placeholder="e.g. Shivam Gangwar"
+                      placeholder="Display name"
                       required
-                      className="
-                        w-full pl-10 pr-4 py-3 text-sm
-                        bg-slate-50/70 dark:bg-slate-950/60
-                        border border-slate-200 dark:border-slate-800
-                        focus:border-indigo-500 dark:focus:border-indigo-500
-                        focus:ring-2 focus:ring-indigo-500/20
-                        text-slate-900 dark:text-slate-100
-                        placeholder-slate-400 dark:placeholder-slate-500
-                        rounded-2xl focus:outline-hidden
-                        transition-all duration-200
-                      "
+                      className={fieldClass}
                     />
                   </div>
                 </div>
-              </>
-            )}
+              )}
 
-            {/* Submit Button */}
-            <button
-              type="submit"
-              className="
-                w-full py-3.5 rounded-2xl font-semibold text-sm cursor-pointer mt-4
-                bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500
-                text-white shadow-lg shadow-indigo-500/25 hover:shadow-indigo-500/40
-                active:scale-98 transform hover:-translate-y-0.5 active:translate-y-0
-                transition-all duration-200 flex items-center justify-center gap-2
-              "
-            >
-              <span>{isRegistering ? 'Register & Create Account' : 'Sign In to Chat'}</span>
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M14 5l7 7m0 0l-7 7m7-7H3" />
-              </svg>
-            </button>
-
-            {/* Toggle Sign In / Register state */}
-            <div className="text-center pt-2">
               <button
-                type="button"
-                onClick={() => {
-                  setIsRegistering(!isRegistering);
-                  setPassword('');
-                }}
-                className="text-xs text-indigo-600 hover:text-indigo-500 dark:text-indigo-400 dark:hover:text-indigo-300 font-bold cursor-pointer underline decoration-dotted transition-colors duration-200"
+                type="submit"
+                disabled={isLoading}
+                className="
+                  w-full h-11 rounded-xl font-semibold text-sm cursor-pointer mt-2
+                  bg-app-primary hover:bg-app-primary-hover
+                  text-white dark:text-slate-950
+                  disabled:opacity-60 disabled:cursor-not-allowed
+                  transition-colors duration-150
+                  focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-app-primary
+                "
               >
-                {isRegistering
-                  ? 'Already have an account? Sign In here'
-                  : "Don't have an account? Register here"}
+                {isLoading
+                  ? (isRegistering ? 'Creating account…' : 'Signing in…')
+                  : (isRegistering ? 'Create account' : 'Sign in')}
               </button>
-            </div>
-          </form>
-        </div>
-      </main>
 
-      {/* Footer Info */}
-      <footer className="relative z-10 text-center text-[10px] text-slate-400 dark:text-slate-500 font-medium select-none">
-        Made By Shivam
-      </footer>
+              <div className="text-center pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsRegistering(!isRegistering);
+                    setPassword('');
+                  }}
+                  className="text-sm text-app-primary hover:underline font-medium cursor-pointer"
+                >
+                  {isRegistering
+                    ? 'Already have an account? Sign in'
+                    : "Don't have an account? Create one"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </main>
+      </div>
     </div>
   );
 };
