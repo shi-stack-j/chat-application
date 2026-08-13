@@ -3,10 +3,13 @@ package com.shiv.chat_bakend.mapper;
 
 import com.shiv.chat_bakend.dto.message.MessageReqDto;
 import com.shiv.chat_bakend.dto.message.MessageResDto;
+import com.shiv.chat_bakend.dto.reaction.MessageReactionDto;
 import com.shiv.chat_bakend.enums.MessageStatusEnum;
 import com.shiv.chat_bakend.model.ConversationEn;
 import com.shiv.chat_bakend.model.MessageEn;
 import com.shiv.chat_bakend.model.UserEn;
+
+import java.util.List;
 
 public class MessageMapper {
     public static MessageEn toMessageEn(MessageReqDto messageReqDto, UserEn sender, UserEn receiver, ConversationEn conversationEn){
@@ -18,7 +21,7 @@ public class MessageMapper {
         return messageEn;
     }
 
-    public static MessageResDto toMessageResDto(MessageEn messageEn, MessageStatusEnum statusEnum){
+    public static MessageResDto toMessageResDto(MessageEn messageEn, MessageStatusEnum statusEnum, List<MessageReactionDto> reactions){
         MessageResDto messageResDto=new MessageResDto();
         messageResDto.setMessageId(messageEn.getId());
         messageResDto.setConversationId(messageEn.getConversation().getId());
@@ -29,6 +32,7 @@ public class MessageMapper {
         messageResDto.setEdited(messageEn.isEdited());
         messageResDto.setEditedAt(messageEn.getEditedAt());
         messageResDto.setStatus(statusEnum);
+        messageResDto.setReactions(reactions);
         return messageResDto;
     }
 }

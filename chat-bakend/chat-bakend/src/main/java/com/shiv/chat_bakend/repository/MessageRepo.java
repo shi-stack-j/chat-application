@@ -124,4 +124,21 @@ public interface MessageRepo extends JpaRepository<MessageEn,Long> {
             Pageable pageable
     );
 
+    @Query("""
+        SELECT me
+        FROM MessageEn me
+        WHERE
+            me.id = :messageId
+            AND
+            (
+                me.sender.userId = :currentUserId
+                OR 
+                me.receiver.userId = :currentUserId
+            )
+    """)
+    Optional<MessageEn> findMessageForReaction(
+            @Param("currentUserId") String userId,
+            @Param("messageId")Long messageId
+    );
+
 }

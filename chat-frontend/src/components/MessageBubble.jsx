@@ -1,8 +1,11 @@
-import { useState, useRef, useEffect, memo } from 'react';
+import { useState, useRef, useEffect, useMemo, memo } from 'react';
+import { useSelector } from 'react-redux';
+import { selectCurrentUserId } from '../features/auth/authSlice';
 import useChat from '../hooks/useChat';
 import toastHelper from '../utils/toastHelper';
 import DropdownMenu, { MenuItem } from './ui/DropdownMenu';
 import ConfirmModal from './ui/ConfirmModal';
+import ReactionPicker from './ReactionPicker';
 
 const URL_PATTERN = /(https?:\/\/[^\s]+)/gi;
 
@@ -74,17 +77,19 @@ const StatusIcon = ({ status }) => {
 };
 
 export const MessageBubble = memo(({ message, isMe, isConsecutive = false, chatUserId }) => {
-  console.log("Message is :- ",message);
   const { content, timestamp } = message;
   const messageId = message.messageId || message.id;
-  const { conversationList, editMessage, deleteForEveryone, deleteForMe } = useChat();
-  console.log("Message ID is :- ",messageId," mid :- ",message.id);
+  const currentUserId = useSelector(selectCurrentUserId);
+  const { conversationList, editMessage, deleteForEveryone, deleteForMe, addReaction, removeReaction } = useChat();
+
   const [isEditing, setIsEditing] = useState(false);
   const [editText, setEditText] = useState(content || '');
   const [showMenu, setShowMenu] = useState(false);
+  const [showReactionPicker, setShowReactionPicker] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [confirm, setConfirm] = useState(null);
   const menuBtnRef = useRef(null);
+  const reactionBtnRef = useRef(null);
   const longPressTimerRef = useRef(null);
   const touchStartRef = useRef(null);
 
@@ -117,10 +122,65 @@ export const MessageBubble = memo(({ message, isMe, isConsecutive = false, chatU
     return conv?.conversationId || null;
   };
 
-  const handleSaveEdit = async () => {
-    console.log("Making call to edite the message with id :- ",messageId);
-    console.log("Message content is :- ",content);
+  const reactionGroups = useMemo(() => {
+    const reactions = Array.isArray(message.reactions) ? message.reactions : [];
+    if (reactions.length === 0) return [];
 
+    const map = new Map();
+    reactions.forEach((r) => {
+      if (!r || !r.emoji) return;
+      const existing = map.get(r.emoji) || { emoji: r.emoji, count: 0, users: [], hasReacted: false };
+      existing.count += 1;
+      existing.users.push(r.userId);
+      if (currentUserId && r.userId?.toLowerCase() === currentUserId.toLowerCase()) {
+        existing.hasReacted = true;
+      }
+      map.set(r.emoji, existing);
+    });
+
+    return Array.from(map.values());
+  }, [message.reactions, currentUserId]);
+
+  const myReaction = useMemo(() => {
+    const reactions = Array.isArray(message.reactions) ? message.reactions : [];
+    if (!currentUserId || reactions.length === 0) return null;
+    const found = reactions.find(
+      (r) => r.userId?.toLowerCase() === currentUserId.toLowerCase()
+    );
+    return found ? found.emoji : null;
+  }, [message.reactions, currentUserId]);
+
+  const handleSelectReaction = async (emoji) => {
+    const conversationId = resolveConversationId();
+    if (!messageId) return;
+
+    try {
+      if (myReaction === emoji) {
+        await removeReaction(conversationId, messageId);
+      } else {
+        await addReaction(conversationId, messageId, emoji);
+      }
+    } catch (error) {
+      toastHelper.error(error.message || 'Failed to update reaction.');
+    }
+  };
+
+  const handleBadgeClick = async (group) => {
+    const conversationId = resolveConversationId();
+    if (!messageId) return;
+
+    try {
+      if (group.hasReacted) {
+        await removeReaction(conversationId, messageId);
+      } else {
+        await addReaction(conversationId, messageId, group.emoji);
+      }
+    } catch (error) {
+      toastHelper.error(error.message || 'Failed to update reaction.');
+    }
+  };
+
+  const handleSaveEdit = async () => {
     const cleanText = editText.trim();
     if (!cleanText) {
       toastHelper.error('Message content cannot be empty.');
@@ -132,8 +192,6 @@ export const MessageBubble = memo(({ message, isMe, isConsecutive = false, chatU
     }
 
     const conversationId = resolveConversationId();
-    console.log("Conversation ID for edit is after resolving :- ",conversationId);
-    console.log("MEssage id after resolving is :- ",messageId);
     if (!conversationId || !messageId) {
       toastHelper.error('Unable to resolve conversation for edit.');
       return;
@@ -141,7 +199,6 @@ export const MessageBubble = memo(({ message, isMe, isConsecutive = false, chatU
 
     setIsSubmitting(true);
     try {
-      console.log(`Attempting to edit message ID ${messageId} in conversation ${conversationId} with new content: ${cleanText}`);
       await editMessage(conversationId, messageId, cleanText);
       toastHelper.success('Message updated.');
       setIsEditing(false);
@@ -244,31 +301,59 @@ export const MessageBubble = memo(({ message, isMe, isConsecutive = false, chatU
     openActions();
   };
 
-  const actionButton = !isDeleted && !isEditing && (
-    <button
-      ref={menuBtnRef}
-      type="button"
-      onClick={() => setShowMenu((open) => !open)}
-      disabled={isSubmitting}
-      aria-label="Message options"
-      data-open={showMenu ? 'true' : 'false'}
+  const actionButtons = !isDeleted && !isEditing && (
+    <div
       className={`
         msg-action-btn
         absolute top-1 z-10
         ${isMe ? 'right-full mr-1' : 'left-full ml-1'}
-        h-6 w-6 rounded-md
-        flex items-center justify-center
-        text-app-muted hover:text-app-text hover:bg-app-surface
-        cursor-pointer
+        flex items-center gap-0.5
         transition-opacity duration-150
       `}
     >
-      <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-        <circle cx="12" cy="5" r="1.6" />
-        <circle cx="12" cy="12" r="1.6" />
-        <circle cx="12" cy="19" r="1.6" />
-      </svg>
-    </button>
+      <button
+        ref={reactionBtnRef}
+        type="button"
+        onClick={() => setShowReactionPicker((open) => !open)}
+        disabled={isSubmitting}
+        aria-label="React with emoji"
+        data-open={showReactionPicker ? 'true' : 'false'}
+        className="
+          h-6 w-6 rounded-md
+          flex items-center justify-center
+          text-app-muted hover:text-app-text hover:bg-app-surface
+          cursor-pointer transition-colors duration-150
+        "
+      >
+        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="12" cy="12" r="10" />
+          <path d="M8 14s1.5 2 4 2 4-2 4-2" />
+          <line x1="9" y1="9" x2="9.01" y2="9" />
+          <line x1="15" y1="9" x2="15.01" y2="9" />
+        </svg>
+      </button>
+
+      <button
+        ref={menuBtnRef}
+        type="button"
+        onClick={() => setShowMenu((open) => !open)}
+        disabled={isSubmitting}
+        aria-label="Message options"
+        data-open={showMenu ? 'true' : 'false'}
+        className="
+          h-6 w-6 rounded-md
+          flex items-center justify-center
+          text-app-muted hover:text-app-text hover:bg-app-surface
+          cursor-pointer transition-colors duration-150
+        "
+      >
+        <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="12" cy="5" r="1.6" />
+          <circle cx="12" cy="12" r="1.6" />
+          <circle cx="12" cy="19" r="1.6" />
+        </svg>
+      </button>
+    </div>
   );
 
   return (
@@ -289,7 +374,7 @@ export const MessageBubble = memo(({ message, isMe, isConsecutive = false, chatU
         onTouchCancel={handleTouchEnd}
         onContextMenu={handleContextMenu}
       >
-        {actionButton}
+        {actionButtons}
 
         <div
           className={`
@@ -303,6 +388,15 @@ export const MessageBubble = memo(({ message, isMe, isConsecutive = false, chatU
             }
           `}
         >
+          <ReactionPicker
+            open={showReactionPicker}
+            onClose={() => setShowReactionPicker(false)}
+            onSelect={handleSelectReaction}
+            anchorRef={reactionBtnRef}
+            currentReaction={myReaction}
+            align={isMe ? 'right' : 'left'}
+          />
+
           <DropdownMenu
             open={showMenu}
             onClose={() => setShowMenu(false)}
@@ -310,6 +404,15 @@ export const MessageBubble = memo(({ message, isMe, isConsecutive = false, chatU
             align={isMe ? 'left' : 'right'}
             width={200}
           >
+            <MenuItem onClick={() => { setShowMenu(false); setShowReactionPicker(true); }}>
+              <svg className="w-4 h-4 text-app-primary shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" aria-hidden="true">
+                <circle cx="12" cy="12" r="10" />
+                <path d="M8 14s1.5 2 4 2 4-2 4-2" />
+                <line x1="9" y1="9" x2="9.01" y2="9" />
+                <line x1="15" y1="9" x2="15.01" y2="9" />
+              </svg>
+              React with emoji
+            </MenuItem>
             {isMe && isWithin30Mins && (
               <MenuItem onClick={() => { setIsEditing(true); setShowMenu(false); }}>
                 <svg className="w-4 h-4 text-app-primary shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
@@ -399,6 +502,43 @@ export const MessageBubble = memo(({ message, isMe, isConsecutive = false, chatU
             )}
           </div>
         </div>
+
+        {/* Reaction badges */}
+        {reactionGroups.length > 0 && !isDeleted && (
+          <div className={`
+            flex flex-wrap items-center gap-1 mt-1 select-none
+            ${isMe ? 'justify-end' : 'justify-start'}
+          `}>
+            {reactionGroups.map((group) => {
+              const userTooltip = group.users.join(', ');
+              return (
+                <button
+                  key={group.emoji}
+                  type="button"
+                  onClick={() => handleBadgeClick(group)}
+                  title={userTooltip}
+                  aria-label={`${group.emoji} reacted by ${userTooltip}`}
+                  className={`
+                    inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs
+                    transition-all duration-150 cursor-pointer border
+                    hover:scale-105 active:scale-95 shadow-2xs
+                    ${group.hasReacted
+                      ? 'bg-app-primary/15 border-app-primary/40 text-app-primary font-medium dark:bg-app-primary/25'
+                      : 'bg-app-surface border-app-border text-app-text hover:border-app-border/80'
+                    }
+                  `}
+                >
+                  <span className="text-[13px] leading-none">{group.emoji}</span>
+                  {group.count > 1 && (
+                    <span className="text-[10.5px] font-semibold tabular-nums leading-none">
+                      {group.count}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       <ConfirmModal
@@ -430,7 +570,9 @@ export const MessageBubble = memo(({ message, isMe, isConsecutive = false, chatU
     prevProps.message.edited === nextProps.message.edited &&
     prevProps.message.isEdited === nextProps.message.isEdited &&
     prevProps.message.isDeletedForEveryone === nextProps.message.isDeletedForEveryone &&
-    prevProps.message.deletedForEveryOne === nextProps.message.deletedForEveryOne;
+    prevProps.message.deletedForEveryOne === nextProps.message.deletedForEveryOne &&
+    prevProps.message.reactions === nextProps.message.reactions;
 });
 
 export default MessageBubble;
+

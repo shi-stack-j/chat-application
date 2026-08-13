@@ -150,4 +150,24 @@ public interface MessageDeliveryRepo extends JpaRepository<MessageDeliveryEn,Lon
     );
 
     List<MessageDeliveryEn> findByMessage_IdIn(Set<Long> messageIds);
+
+
+
+//    BLOCKED + currentUser != sender → ❌ reject
+//    BLOCKED + currentUser == sender → ✅ allow
+//    NOT BLOCKED → ✅ continue
+    @Query("""
+        SELECT CASE
+            WHEN md.status = com.shiv.chat_bakend.enums.MessageStatusEnum.BLOCKED
+                 AND md.message.sender.userId <> :currentUserId
+            THEN true
+            ELSE false
+        END
+        FROM MessageDeliveryEn md
+        WHERE md.message.id = :messageId
+    """)
+    boolean isReactionBlocked(
+            @Param("messageId") Long messageId,
+            @Param("currentUserId") String currentUserId
+    );
 }

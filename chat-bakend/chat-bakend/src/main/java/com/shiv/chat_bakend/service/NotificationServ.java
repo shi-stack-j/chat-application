@@ -7,6 +7,7 @@ import com.shiv.chat_bakend.dto.ack.SentAckResDto;
 import com.shiv.chat_bakend.dto.ack.TypingAckReqDto;
 import com.shiv.chat_bakend.dto.message.MessageEditReqDto;
 import com.shiv.chat_bakend.dto.message.MessageNotificationInfoDto;
+import com.shiv.chat_bakend.dto.reaction.MessageReactionResponseDto;
 import com.shiv.chat_bakend.enums.MessageStatusEnum;
 import com.shiv.chat_bakend.enums.WebSocketEventTypeEnum;
 import com.shiv.chat_bakend.evenentPayloads.*;
@@ -63,6 +64,7 @@ public class NotificationServ {
 //    This is used to inform other user that zyx user is offline
 //    This will inform to all the users that are in conversation with the given user
     public void notifyOffline(String userId){
+        if(userId==null || userId.isEmpty())throw new RuntimeException("Offline ack request is not valid");
         System.out.println("Calling the notification service with the userID "+userId);
         Set<String> totalFriends=conversationRepo.findFriendIds(userId);
         if(totalFriends.isEmpty())return;
@@ -83,7 +85,7 @@ public class NotificationServ {
     }
 //    Notify typing
     public void notifyTyping(String senderId, TypingAckReqDto typingAckReqDto){
-        if(typingAckReqDto==null)throw new RuntimeException("typing ack request is not valid");
+        if(typingAckReqDto==null || senderId==null || senderId.isEmpty())throw new RuntimeException("typing ack request is not valid");
         String receiverId=conversationRepo.findReceiver(typingAckReqDto.getConversationId(),senderId).orElseThrow(()->new RuntimeException("No conversation found with the given id or not belongs to you"));
         if (!userBlockSer.canUserCommunicate(senderId, receiverId)) {
             return;
@@ -156,6 +158,15 @@ public class NotificationServ {
                 resDto
         );
     }
+//    This service is used to send the message reaction notification
+    public void notifyReaction(MessageReactionResponseDto responseDto,String currentUserId){
+        if(responseDto==null || currentUserId==null || currentUserId.isEmpty())throw new RuntimeException("reaction ack request is not valid");
+        String receiverId=conversationRepo.findReceiver(responseDto.getConversationId(),currentUserId).orElseThrow(()->new RuntimeException("No conversation found with the given id or not belongs to you"));
+        if (!userBlockSer.canUserCommunicate(currentUserId, receiverId)) {
+            return;
+        }
+        sendEvent(receiverId,WebSocketEventTypeEnum.MESSAGE_REACTION,responseDto);
+    }
     private <T> void sendEvent(
             String toUserId,
             WebSocketEventTypeEnum eventTypeEnum,
@@ -175,5 +186,7 @@ public class NotificationServ {
                 webSocketEventResDto
         );
     }
+//
+
 
 }

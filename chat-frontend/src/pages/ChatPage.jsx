@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
-import { selectSelectedChatUserId, incrementUnread, addOnlineUser, updateUserPresence, setTypingStatus, updateMessageStatus, updateSingleMessageStatus, handleSentAck, updateEditedMessage, updateDeletedMessage } from '../features/chat/chatSlice';
+import { selectSelectedChatUserId, incrementUnread, addOnlineUser, updateUserPresence, setTypingStatus, updateMessageStatus, updateSingleMessageStatus, handleSentAck, updateEditedMessage, updateDeletedMessage, updateMessageReaction } from '../features/chat/chatSlice';
 import { setConnectionState } from '../features/websocket/websocketSlice';
 import { selectCurrentUserId, setCurrentUser } from '../features/auth/authSlice';
 import AppLayout from '../layouts/AppLayout';
@@ -208,6 +208,15 @@ export const ChatPage = () => {
                     conversationId: payload.conversationId,
                     messageId: payload.messageId,
                     content: payload.content
+                  }));
+                } else if (eventType === 'MESSAGE_REACTION') {
+                  console.log('Dispatching MESSAGE_REACTION event to Redux store:', payload);
+                  dispatch(updateMessageReaction({
+                    conversationId: payload.conversationId,
+                    messageId: payload.messageId,
+                    userId: payload.userId,
+                    emoji: payload.emoji,
+                    action: payload.action
                   }));
                 } else {
                   console.log('Unhandled WebSocket event type:', eventType);

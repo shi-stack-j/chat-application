@@ -6,5 +6,6 @@ public enum WebSocketEventTypeEnum {
     USER_MESSAGE,
     USER_TYPING,
     MESSAGE_DELETED,
-    MESSAGE_EDITED
+    MESSAGE_EDITED,
+    MESSAGE_REACTION
 }

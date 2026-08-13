@@ -6,9 +6,12 @@ import com.shiv.chat_bakend.dto.message.MessageEditReqDto;
 import com.shiv.chat_bakend.dto.message.MessageReadReqDto;
 import com.shiv.chat_bakend.dto.message.MessageReqDto;
 import com.shiv.chat_bakend.dto.message.MessageResDto;
+import com.shiv.chat_bakend.dto.reaction.MessageReactionDto;
+import com.shiv.chat_bakend.dto.reaction.MessageReactionReqDto;
 import com.shiv.chat_bakend.enums.MessageStatusEnum;
 import com.shiv.chat_bakend.mapper.MessageMapper;
 import com.shiv.chat_bakend.model.*;
+import com.shiv.chat_bakend.projection.MessageReactionProjection;
 import com.shiv.chat_bakend.repository.*;
 import jakarta.transaction.Transactional;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -49,6 +52,8 @@ public class MessageSer {
     private UserBlockSer userBlockSer;
     @Autowired
     private MessageDeliveryRepo messageDeliveryRepo;
+    @Autowired
+    private MessageReactionRepo messageReactionRepo;
 
     //    This is used to get the latest conversation messages
     public ResponseEntity<?> getLatestConversationMessages(MessageReadReqDto reqDto, Pageable pageable){
@@ -76,7 +81,28 @@ public class MessageSer {
                         delivery -> delivery.getMessage().getId(),
                          MessageDeliveryEn::getStatus
                 ));
-        Page<MessageResDto> messages=messageEns.map(msg->MessageMapper.toMessageResDto(msg,messageStatusMap.get(msg.getId())));
+        List<Long> messageIds = messageEns.stream()
+                .map(MessageEn::getId)
+                .collect(Collectors.toList());
+
+        List<MessageReactionProjection> reactionProjections =
+                messageIds.isEmpty()
+                        ? List.of()
+                        : messageReactionRepo.findReactionsByMessageIds(messageIds);
+
+        Map<Long, List<MessageReactionDto>> reactionsMap =
+                reactionProjections.stream()
+                        .collect(Collectors.groupingBy(
+                                MessageReactionProjection::getMessageId,
+                                Collectors.mapping(
+                                        reaction -> new MessageReactionDto(
+                                                reaction.getUserId(),
+                                                reaction.getEmoji()
+                                        ),
+                                        Collectors.toList()
+                                )
+                        ));
+        Page<MessageResDto> messages=messageEns.map(msg->MessageMapper.toMessageResDto(msg,messageStatusMap.get(msg.getId()),reactionsMap.getOrDefault(msg.getId(), List.of())));
 
         return ResponseEntity.ok(messages);
     }
@@ -110,7 +136,7 @@ public class MessageSer {
             conversationRepo.save(conversationEn);
         }
         deliverySer.createDelivery(savedMessageEn,isBlocked);
-        MessageResDto messageResDto=MessageMapper.toMessageResDto(savedMessageEn,isBlocked?MessageStatusEnum.BLOCKED : MessageStatusEnum.SENT);
+        MessageResDto messageResDto=MessageMapper.toMessageResDto(savedMessageEn,isBlocked?MessageStatusEnum.BLOCKED : MessageStatusEnum.SENT,List.of());
         return messageResDto;
     }
 

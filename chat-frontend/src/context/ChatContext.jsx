@@ -3,8 +3,10 @@ import { useDispatch, useSelector } from 'react-redux';
 import { ChatContext } from './ChatContextInstance';
 import conversationService from '../services/conversationService';
 import messageService from '../services/messageService';
+import reactionService from '../services/reactionService';
 import userService from '../services/userService';
 import chatService from '../services/chatService';
+import { selectCurrentUserId } from '../features/auth/authSlice';
 import {
   setConversations,
   setTotalUnreadCount,
@@ -23,6 +25,7 @@ import {
   updateEditedMessage,
   updateDeletedMessage,
   deleteMessagesForMe,
+  updateMessageReaction,
   addBlockedUser,
   removeBlockedUser,
   selectConversations,
@@ -47,6 +50,7 @@ export const ChatProvider = ({ children }) => {
   const loadingConversations = useSelector(selectLoadingConversations);
   const loadingMessages = useSelector(selectLoadingMessages);
   const selectedChatUserId = useSelector(selectSelectedChatUserId);
+  const currentUserId = useSelector(selectCurrentUserId);
   const pagination = useSelector((state) => state.chat.pagination || {});
 
   const loadingConversationsRef = useRef(loadingConversations);
@@ -54,6 +58,7 @@ export const ChatProvider = ({ children }) => {
   const selectedChatUserIdRef = useRef(selectedChatUserId);
   const conversationListRef = useRef(conversationList);
   const paginationRef = useRef(pagination);
+  const currentUserIdRef = useRef(currentUserId);
 
   useEffect(() => {
     loadingConversationsRef.current = loadingConversations;
@@ -67,7 +72,8 @@ export const ChatProvider = ({ children }) => {
     selectedChatUserIdRef.current = selectedChatUserId;
     conversationListRef.current = conversationList;
     paginationRef.current = pagination;
-  }, [selectedChatUserId, conversationList, pagination]);
+    currentUserIdRef.current = currentUserId;
+  }, [selectedChatUserId, conversationList, pagination, currentUserId]);
 
   // Fetch conversation summaries from backend
   const fetchConversations = useCallback(async (currentUserId) => {
@@ -157,7 +163,8 @@ export const ChatProvider = ({ children }) => {
           isEdited: !!(msg.isEdited || msg.edited),
           editedAt: msg.editedAt || null,
           deletedFromEveryOne: !!(msg.deletedFromEveryOne || msg.isDeletedForEveryone),
-          status: msg.status || null
+          status: msg.status || null,
+          reactions: Array.isArray(msg.reactions) ? msg.reactions : []
         };
       });
 
@@ -230,7 +237,8 @@ export const ChatProvider = ({ children }) => {
           isEdited: !!(msg.isEdited || msg.edited),
           editedAt: msg.editedAt || null,
           deletedFromEveryOne: !!(msg.deletedFromEveryOne || msg.isDeletedForEveryone),
-          status: msg.status || null
+          status: msg.status || null,
+          reactions: Array.isArray(msg.reactions) ? msg.reactions : []
         };
       });
 
@@ -414,6 +422,46 @@ export const ChatProvider = ({ children }) => {
     }
   }, [dispatch]);
 
+  // Adds or updates message reaction via backend REST API and dispatches Redux update
+  const addReaction = useCallback(async (conversationId, messageId, emoji) => {
+    if (!messageId || !emoji) return;
+    try {
+      const response = await reactionService.addOrUpdateReaction(messageId, emoji);
+      // Immediately update current user's UI using HTTP response
+      dispatch(updateMessageReaction({
+        conversationId: response.conversationId || conversationId,
+        messageId: response.messageId || messageId,
+        userId: response.userId || currentUserIdRef.current,
+        emoji: response.emoji || emoji,
+        action: response.action || 'ADDED'
+      }));
+      return response;
+    } catch (error) {
+      console.error('Add reaction error:', error);
+      throw error;
+    }
+  }, [dispatch]);
+
+  // Removes message reaction via backend REST API and dispatches Redux update
+  const removeReaction = useCallback(async (conversationId, messageId) => {
+    if (!messageId) return;
+    try {
+      const response = await reactionService.removeReaction(messageId);
+      // Immediately update current user's UI using HTTP response
+      dispatch(updateMessageReaction({
+        conversationId: response.conversationId || conversationId,
+        messageId: response.messageId || messageId,
+        userId: response.userId || currentUserIdRef.current,
+        emoji: null,
+        action: 'DELETED'
+      }));
+      return response;
+    } catch (error) {
+      console.error('Remove reaction error:', error);
+      throw error;
+    }
+  }, [dispatch]);
+
   // Fetch raw conversation entities via GET /conversation/get
   const fetchRawConversations = useCallback(async (currentUserId, page = 0, size = 20) => {
     try {
@@ -456,6 +504,8 @@ export const ChatProvider = ({ children }) => {
     editMessage,
     deleteForEveryone,
     deleteForMe,
+    addReaction,
+    removeReaction,
     blockUser,
     unblockUser
   }), [
@@ -478,6 +528,8 @@ export const ChatProvider = ({ children }) => {
     editMessage,
     deleteForEveryone,
     deleteForMe,
+    addReaction,
+    removeReaction,
     blockUser,
     unblockUser
   ]);

@@ -1,6 +1,7 @@
 package com.shiv.chat_bakend.repository;
 
 import com.shiv.chat_bakend.model.MessageVisibilityEn;
+import com.shiv.chat_bakend.projection.MessageReactionVisibilityProjection;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -60,5 +61,48 @@ public interface MessageVisibilityRepo extends JpaRepository<MessageVisibilityEn
     boolean checkIsDeleted(
             @Param("userId")String userId,
             @Param("messageId")Long messageId
+    );
+
+    /**
+     * Checks whether the message is deleted for the current user
+     * or hidden due to a conversation clear operation.
+     * Returns both visibility states as a projection.
+     */
+    @Query("""
+    SELECT
+        CASE
+            WHEN EXISTS (
+                SELECT 1
+                FROM MessageVisibilityEn mv
+                WHERE mv.message.id = :messageId
+                  AND mv.user.userId = :currentUserId
+            )
+            THEN true
+            ELSE false
+        END AS deletedForMe,
+
+        CASE
+            WHEN EXISTS (
+                SELECT 1
+                FROM ConversationVisibilityEn cv
+                WHERE cv.conversation.id = (
+                    SELECT m.conversation.id
+                    FROM MessageEn m
+                    WHERE m.id = :messageId
+                )
+                AND cv.user.userId = :currentUserId
+                AND cv.clearedAt >= (
+                    SELECT m.sentAt
+                    FROM MessageEn m
+                    WHERE m.id = :messageId
+                )
+            )
+            THEN true
+            ELSE false
+        END AS clearedFromConversation
+    """)
+    MessageReactionVisibilityProjection findReactionVisibility(
+            @Param("messageId") Long messageId,
+            @Param("currentUserId") String currentUserId
     );
 }

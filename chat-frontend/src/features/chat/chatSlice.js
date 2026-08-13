@@ -594,6 +594,55 @@ const chatSlice = createSlice({
         );
       }
     },
+    updateMessageReaction: (state, action) => {
+      const { conversationId, messageId, userId, emoji, action: reactionAction } = action.payload;
+      if (!messageId || !userId) return;
+
+      const conv = conversationId ? state.conversations.find((c) => c.conversationId === conversationId) : null;
+      const keys = [];
+      if (conversationId) keys.push(conversationId);
+      if (conv?.receiver?.userId) keys.push(conv.receiver.userId);
+
+      // Check all target keys or all message stores if keys not specifically resolved
+      const allKeys = keys.length > 0 ? Array.from(new Set(keys)) : Object.keys(state.messages);
+
+      allKeys.forEach((key) => {
+        if (state.messages[key]) {
+          state.messages[key] = state.messages[key].map((msg) => {
+            if (String(msg.id) === String(messageId) || String(msg.messageId) === String(messageId)) {
+              const currentReactions = Array.isArray(msg.reactions) ? [...msg.reactions] : [];
+              let updatedReactions;
+
+              if (reactionAction === 'DELETED') {
+                updatedReactions = currentReactions.filter(
+                  (r) => r.userId?.toLowerCase() !== userId.toLowerCase()
+                );
+              } else {
+                // ADDED or UPDATED action
+                const existingIndex = currentReactions.findIndex(
+                  (r) => r.userId?.toLowerCase() === userId.toLowerCase()
+                );
+                if (existingIndex !== -1) {
+                  updatedReactions = [...currentReactions];
+                  updatedReactions[existingIndex] = {
+                    ...updatedReactions[existingIndex],
+                    emoji: emoji
+                  };
+                } else {
+                  updatedReactions = [...currentReactions, { userId, emoji }];
+                }
+              }
+
+              return {
+                ...msg,
+                reactions: updatedReactions
+              };
+            }
+            return msg;
+          });
+        }
+      });
+    },
     resetChatState: (state) => {
       state.conversations = [];
       state.selectedChatUserId = null;
@@ -641,6 +690,7 @@ export const {
   updateEditedMessage,
   updateDeletedMessage,
   deleteMessagesForMe,
+  updateMessageReaction,
   resetChatState
 } = chatSlice.actions;
 

@@ -1,10 +1,12 @@
 package com.shiv.chat_bakend.dto.message;
 
 
+import com.shiv.chat_bakend.dto.reaction.MessageReactionDto;
 import com.shiv.chat_bakend.enums.MessageStatusEnum;
 import lombok.*;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Getter
 @Setter
@@ -22,4 +24,5 @@ public class MessageResDto {
     private LocalDateTime editedAt;
     private LocalDateTime receivedAt;
     private MessageStatusEnum status;
+    private List<MessageReactionDto> reactions;
 }
